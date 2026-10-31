@@ -1,0 +1,1866 @@
+<meta charset="utf-8">
+<title>Virtual CFO</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,500&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+:root{
+  --bg:#ffffff; --surface:#ffffff; --surface-2:#f8fafc; --border:#e2e8f0;
+  --fg:#0f172a; --fg-muted:#64748b; --accent:#1e3a8a; --accent-ink:#0f172a; --accent-soft:#eef2fb;
+  --good:#16a34a; --good-soft:#eaf7ee; --warn:#d97706; --warn-soft:#fdf2e3; --bad:#dc2626; --bad-soft:#fdeceb;
+  --shadow: 0 1px 2px rgba(15,23,42,.04), 0 10px 26px -14px rgba(15,23,42,.12);
+  --font-display:'Newsreader', Georgia, serif; --font-body:'Public Sans', -apple-system, sans-serif; --font-mono:'IBM Plex Mono', Consolas, monospace;
+  color-scheme: light;
+}
+*{box-sizing:border-box;}
+body{margin:0; background:var(--bg); color:var(--fg); font-family:var(--font-body); font-size:15px; line-height:1.5;}
+h1,h2,h3{font-family:var(--font-display); font-weight:600; margin:0;}
+.mono,.num{font-family:var(--font-mono); font-variant-numeric:tabular-nums;}
+a{color:var(--accent);}
+button{font-family:inherit;}
+
+/* ---------- stage shell ---------- */
+#app{max-width:1100px; margin:0 auto; padding-inline:16px; padding-block:20px 48px;}
+.stagebar{display:flex; align-items:center; justify-content:space-between; gap:12px; padding-bottom:14px; margin-bottom:18px; border-bottom:1px solid var(--border);}
+.stagebar .left{display:flex; gap:8px;}
+.navbtn{background:none; border:1px solid var(--border); color:var(--fg-muted); font-weight:600; font-size:12.5px; padding:7px 12px; border-radius:7px; cursor:pointer;}
+.navbtn:hover{color:var(--fg); border-color:var(--fg-muted);}
+.navbtn.home{color:var(--accent); border-color:var(--accent-soft); background:var(--accent-soft);}
+.stagebar .title{font-size:17px;}
+.stagebar .title em{font-style:italic; color:var(--accent);}
+
+/* ---------- cards ---------- */
+.card{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:18px 20px; margin-bottom:16px; box-shadow:var(--shadow);}
+.card h2{font-size:19px; margin-bottom:4px;}
+.card .hint{color:var(--fg-muted); font-size:13px; margin-bottom:14px;}
+.card-row{display:flex; flex-wrap:wrap; gap:16px;}
+.card-row > .card{flex:1 1 280px; margin-bottom:0;}
+
+.btn{font-family:var(--font-body); font-weight:600; font-size:13px; background:var(--accent); color:#fff; border:none; border-radius:7px; padding:9px 14px; cursor:pointer; display:inline-flex; align-items:center; gap:6px;}
+.btn:hover{filter:brightness(1.08);}
+.btn.secondary{background:var(--surface-2); color:var(--fg); border:1px solid var(--border);}
+.btn.danger{background:var(--bad-soft); color:var(--bad); border:1px solid transparent;}
+.btn:disabled{opacity:.5; cursor:not-allowed;}
+.btn-row{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; align-items:center;}
+
+textarea, input[type=text], input[type=number]{font-family:var(--font-mono); font-size:13px; color:var(--fg); background:var(--surface-2); border:1px solid var(--border); border-radius:6px; padding:7px 9px;}
+textarea{width:100%; min-height:120px; resize:vertical;}
+select{font-family:var(--font-body); font-size:13.5px; color:var(--fg); background:var(--surface-2); border:1px solid var(--border); border-radius:7px; padding:9px 10px;}
+
+/* ---------- tables ---------- */
+.table-wrap{overflow-x:auto; border:1px solid var(--border); border-radius:8px;}
+table{width:100%; border-collapse:collapse; font-size:13.5px; min-width:480px;}
+thead th{text-align:left; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--fg-muted); background:var(--surface-2); padding:9px 10px; border-bottom:1px solid var(--border); white-space:nowrap;}
+tbody td{padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:middle;}
+tbody tr:last-child td{border-bottom:none;}
+tbody tr.group-row td{background:var(--accent-soft); color:var(--accent-ink); font-weight:700; font-size:11.5px; letter-spacing:.05em; text-transform:uppercase;}
+td.num, th.num{text-align:right; font-family:var(--font-mono); font-variant-numeric:tabular-nums; white-space:nowrap;}
+tbody tr:hover td{background:var(--surface-2);}
+.metric-name{font-weight:600;}
+.metric-desc{display:block; color:var(--fg-muted); font-size:11.5px; font-weight:400;}
+td.editcell input{width:90px; text-align:right;}
+td.badcell{background:var(--bad-soft) !important;}
+
+/* ---------- pills ---------- */
+.pill{display:inline-block; font-size:11px; font-weight:700; letter-spacing:.03em; padding:2px 8px; border-radius:999px; text-transform:uppercase;}
+.pill.ok{background:var(--good-soft); color:var(--good);}
+.pill.flag{background:var(--bad-soft); color:var(--bad);}
+.pill.muted{background:var(--surface-2); color:var(--fg-muted);}
+.pill.warn{background:var(--warn-soft); color:var(--warn);}
+
+/* ---------- banners ---------- */
+.banner{border-radius:8px; padding:12px 16px; font-size:14px; font-weight:600; display:flex; align-items:center; gap:10px; margin-bottom:16px;}
+.banner.good{background:var(--good-soft); color:var(--good);}
+.banner.bad{background:var(--bad-soft); color:var(--bad);}
+.banner.warn{background:var(--warn-soft); color:var(--warn);}
+
+/* ---------- verdict ---------- */
+.verdict{border-radius:14px; padding:26px 24px; margin-bottom:16px; text-align:center;}
+.verdict.good{background:var(--good-soft);} .verdict.warn{background:var(--warn-soft);} .verdict.bad{background:var(--bad-soft);}
+.verdict .vtitle{font-family:var(--font-display); font-size:28px; font-weight:700;}
+.verdict.good .vtitle{color:var(--good);} .verdict.warn .vtitle{color:var(--warn);} .verdict.bad .vtitle{color:var(--bad);}
+.verdict .vsub{color:var(--fg-muted); font-size:13.5px; margin-top:6px;}
+
+/* ---------- kpis ---------- */
+.kpi-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; margin-bottom:4px;}
+.kpi{background:var(--surface-2); border-radius:8px; padding:10px 12px;}
+.kpi .k-label{font-size:11px; color:var(--fg-muted); text-transform:uppercase; letter-spacing:.03em;}
+.kpi .k-value{font-family:var(--font-mono); font-size:19px; font-weight:600; margin-top:2px;}
+.kpi .k-delta{font-size:11.5px; margin-top:2px; font-family:var(--font-mono);}
+.k-delta.up{color:var(--good);} .k-delta.down{color:var(--bad);}
+
+/* ---------- result tabs ---------- */
+.rtabbar{display:flex; flex-wrap:wrap; gap:4px; margin-bottom:20px; border-bottom:1px solid var(--border);}
+.rtabbar button{font-family:var(--font-body); font-weight:600; font-size:13.5px; background:none; border:none; color:var(--fg-muted); padding:10px 14px; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px;}
+.rtabbar button:hover{color:var(--fg);}
+.rtabbar button[aria-selected="true"]{color:var(--accent-ink); border-bottom-color:var(--accent);}
+.rpanel{display:none;}
+.rpanel.active{display:block;}
+
+/* ---------- onboarding: landing + wizard + upload + how-it-works ---------- */
+.stage-screen{min-height:70vh; display:flex; align-items:center; justify-content:center; padding:24px 0;}
+.stage-inner{width:100%; max-width:620px;}
+.landing-title{font-family:var(--font-display); font-size:34px; color:var(--accent-ink); margin-bottom:12px; text-align:center;}
+.landing-title em{font-style:italic; color:var(--accent);}
+.landing-sub{color:var(--fg-muted); font-size:14.5px; max-width:48ch; margin:0 auto 30px; line-height:1.55; text-align:center;}
+.landing-choices{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+@media (max-width:620px){ .landing-choices{grid-template-columns:1fr;} }
+.landing-choice{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:22px 20px; text-align:left; cursor:pointer; box-shadow:var(--shadow); transition:border-color .15s, transform .15s;}
+.landing-choice:hover{border-color:var(--accent); transform:translateY(-2px);}
+.landing-choice.wide{grid-column:1/-1;}
+.lc-title{font-family:var(--font-display); font-size:17px; font-weight:600; color:var(--accent-ink); margin-bottom:5px;}
+.lc-desc{font-size:12.5px; color:var(--fg-muted); line-height:1.5;}
+.lc-tier{display:inline-block; font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--accent); margin-bottom:6px;}
+.how-link{display:block; margin:26px auto 0; background:none; border:none; color:var(--accent); font-weight:600; font-size:13px; cursor:pointer; text-align:center;}
+.how-link:hover{text-decoration:underline;}
+.sample-link{display:block; text-align:center; margin-top:16px; font-size:12.5px; color:var(--fg-muted); background:none; border:none; cursor:pointer;}
+.sample-link:hover{color:var(--accent);}
+
+.wizard-card{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:34px 30px; box-shadow:var(--shadow);}
+.wizard-progress-label{font-size:12px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--accent); text-align:center; margin-bottom:10px;}
+.wizard-progress-track{height:5px; background:var(--surface-2); border-radius:999px; overflow:hidden; margin-bottom:30px;}
+.wizard-progress-fill{height:100%; background:var(--accent); border-radius:999px; transition:width .2s;}
+.wizard-question{font-family:var(--font-display); font-size:21px; font-weight:600; color:var(--fg); text-align:center; margin-bottom:20px;}
+.wizard-select{width:100%; font-size:15px; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:13px 14px; margin-bottom:10px; cursor:pointer;}
+.wizard-select:focus{outline:none; border-color:var(--accent);}
+.wizard-note{font-size:12.5px; color:var(--fg-muted); text-align:center; min-height:16px; margin-bottom:26px; line-height:1.5;}
+.wizard-nav{display:flex; align-items:center; justify-content:space-between; gap:12px;}
+.ghostbtn{background:none; border:none; color:var(--fg-muted); font-size:13px; font-weight:600; cursor:pointer; padding:10px 4px;}
+.ghostbtn:hover{color:var(--fg);}
+.ghostbtn:disabled{opacity:.35; cursor:default;}
+.wizard-next{min-width:110px; justify-content:center; font-size:14px; padding:11px 22px;}
+
+.how-dots{display:flex; justify-content:center; gap:6px; margin-bottom:22px; flex-wrap:wrap; max-width:320px; margin-left:auto; margin-right:auto;}
+.how-dots .dot{width:7px; height:7px; border-radius:999px; background:var(--border);}
+.how-dots .dot.active{background:var(--accent); width:20px; border-radius:999px;}
+.how-icon{width:56px; height:56px; border-radius:50%; background:var(--accent-soft); display:flex; align-items:center; justify-content:center; margin:0 auto 18px;}
+.how-icon svg{width:26px; height:26px; stroke:var(--accent); fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
+.how-body{font-size:14.5px; color:var(--fg-muted); line-height:1.65; text-align:center; min-height:90px; margin-bottom:26px;}
+.how-body p{margin:0 0 12px;}
+.how-body p:last-child{margin-bottom:0;}
+.how-body ol, .how-body ul{text-align:left; margin:0 0 12px; padding-left:20px;}
+.how-body li{margin-bottom:6px;}
+.how-body a{color:var(--accent); font-weight:600; text-decoration:none;}
+.how-body a:hover{text-decoration:underline;}
+#screen-how .wizard-card{max-width:600px;}
+
+.dropzone{border:2px dashed var(--border); border-radius:10px; padding:22px 16px; text-align:center; cursor:pointer; background:var(--surface-2);}
+.dropzone:hover, .dropzone.dragover{border-color:var(--accent); background:var(--accent-soft);}
+.dropzone .dz-label{font-weight:600; font-size:13.5px; margin-bottom:4px;}
+.dropzone .dz-sub{font-size:11.5px; color:var(--fg-muted);}
+.stmt-chip-row{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;}
+.stmt-chip{flex:1 1 150px; border:1px solid var(--border); border-radius:10px; padding:12px 14px; background:var(--surface-2); font-size:12.5px;}
+.stmt-chip.has-data{border-color:var(--good); background:var(--good-soft);}
+.stmt-chip .sc-title{font-weight:700; margin-bottom:2px;}
+
+.outlook-sliders{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; margin-top:16px; padding-top:14px; border-top:1px solid var(--border);}
+.slider-field{display:flex; flex-direction:column; gap:4px;}
+.slider-field label{font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; color:var(--fg-muted); display:flex; justify-content:space-between;}
+.slider-field label .sval{font-family:var(--font-mono); color:var(--fg); font-weight:600;}
+.slider-field input[type=range]{width:100%; accent-color:var(--accent);}
+
+.pillar-card h3{font-size:14px; text-transform:uppercase; letter-spacing:.03em; color:var(--accent-ink); margin-bottom:10px;}
+.route-btn{font-family:var(--font-body); font-size:12.5px; font-weight:600; color:var(--fg); background:var(--surface-2); border:1px solid var(--border); border-radius:999px; padding:7px 13px; cursor:pointer;}
+.route-btn.active{background:var(--accent); color:#fff; border-color:var(--accent);}
+.footer-note{color:var(--fg-muted); font-size:12px; margin-top:28px; text-align:center;}
+.copy-feedback{font-size:12px; color:var(--good); margin-left:6px;}
+
+@media (max-width:600px){ .kpi-grid{grid-template-columns:repeat(2,1fr);} }
+</style>
+
+<div id="app">
+
+<!-- ===================== LANDING ===================== -->
+<section id="screen-landing" class="stage-screen">
+  <div class="stage-inner">
+    <div class="landing-title"><em>Virtual</em> CFO</div>
+    <div class="landing-sub">An independent financial health check for your business — the kind of first-pass review an analyst would run, done instantly and free of charge. Start by choosing how your statements are organized.</div>
+    <div class="landing-choices">
+      <button type="button" class="landing-choice" data-upload-mode="one">
+        <div class="lc-tier">Most organized</div>
+        <div class="lc-title">One Excel Workbook</div>
+        <div class="lc-desc">A single file with separate tabs for Income Statement, Balance Sheet and Cash Flow.</div>
+      </button>
+      <button type="button" class="landing-choice" data-upload-mode="separate">
+        <div class="lc-tier">Just as accurate</div>
+        <div class="lc-title">Separate Files</div>
+        <div class="lc-desc">Upload each statement as its own Excel or CSV file — 1, 2, or all 3.</div>
+      </button>
+      <button type="button" class="landing-choice" data-upload-mode="paste">
+        <div class="lc-tier">No file needed</div>
+        <div class="lc-title">Copy &amp; Paste</div>
+        <div class="lc-desc">Paste cells straight out of Excel or Google Sheets into a text box.</div>
+      </button>
+      <button type="button" class="landing-choice" data-screen="how">
+        <div class="lc-tier">No data needed</div>
+        <div class="lc-title">How It Works</div>
+        <div class="lc-desc">A short walkthrough of what this does, your privacy, and how the analysis works — no upload.</div>
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== HOW IT WORKS ===================== -->
+<section id="screen-how" class="stage-screen" style="display:none;">
+  <div class="stage-inner">
+    <div class="wizard-card">
+      <div class="how-dots" id="howDots"></div>
+      <div class="how-icon" id="howIcon"></div>
+      <div class="wizard-question" id="howTitle"></div>
+      <div class="how-body" id="howBody"></div>
+      <div class="wizard-nav">
+        <button type="button" class="ghostbtn" id="howHome">Go Home</button>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="btn secondary" id="howPrev">Back</button>
+          <button type="button" class="btn wizard-next" id="howNext">Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== WIZARD (9 questions) ===================== -->
+<section id="screen-wizard" class="stage-screen" style="display:none;">
+  <div class="stage-inner">
+    <div class="wizard-card">
+      <div class="wizard-progress-label" id="wizardStepLabel">Question 1 of 9</div>
+      <div class="wizard-progress-track"><div class="wizard-progress-fill" id="wizardProgressFill" style="width:11%;"></div></div>
+      <div class="wizard-question" id="wizardQuestionTitle"></div>
+      <select class="wizard-select" id="wizardSelect"></select>
+      <div class="wizard-note" id="wizardNote"></div>
+      <div class="wizard-nav">
+        <button type="button" class="ghostbtn" id="wizardHome">Go Home</button>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="btn secondary" id="wizardBack">Back</button>
+          <button type="button" class="btn wizard-next" id="wizardNext">Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== UPLOAD ===================== -->
+<section id="screen-upload" class="stage-screen" style="display:none; align-items:flex-start;">
+  <div class="stage-inner" style="max-width:760px;">
+    <div class="stagebar">
+      <div class="left"><button class="navbtn" id="uploadBack">← Back to Questions</button></div>
+      <button class="navbtn home" id="uploadHome">Go Home</button>
+    </div>
+    <div class="card">
+      <h2>What period does each column represent?</h2>
+      <div class="hint">This sets the day-count used for days-sales-outstanding and similar metrics, so a quarter of data isn't mistaken for a full year.</div>
+      <select id="periodTypeSelect" style="width:100%; max-width:320px;"></select>
+    </div>
+
+    <div class="card" id="uploadOneCard" style="display:none;">
+      <h2>One Workbook</h2>
+      <div class="hint">A single Excel file with tabs for each statement (or however many you have — partial is fine).</div>
+      <div class="dropzone" id="dropOne">
+        <div class="dz-label">Drop your Excel or CSV file here, or click to choose</div>
+        <div class="dz-sub">Multi-tab workbook, or one sheet with everything</div>
+      </div>
+      <input type="file" id="fileOne" accept=".csv,.txt,.xlsx,.xls" style="display:none">
+    </div>
+
+    <div class="card" id="uploadSeparateCard" style="display:none;">
+      <h2>Separate Files</h2>
+      <div class="hint">Upload whichever of these 3 you have — 1, 2, or all 3. Anything not provided is simply left out of the analysis.</div>
+      <div class="card-row">
+        <div class="dropzone" id="dropIS"><div class="dz-label">Income Statement</div><div class="dz-sub">Excel or CSV</div></div>
+        <div class="dropzone" id="dropBS"><div class="dz-label">Balance Sheet</div><div class="dz-sub">Excel or CSV</div></div>
+        <div class="dropzone" id="dropCF"><div class="dz-label">Cash Flow</div><div class="dz-sub">Excel or CSV</div></div>
+      </div>
+      <input type="file" id="fileIS" accept=".csv,.txt,.xlsx,.xls" style="display:none">
+      <input type="file" id="fileBS" accept=".csv,.txt,.xlsx,.xls" style="display:none">
+      <input type="file" id="fileCF" accept=".csv,.txt,.xlsx,.xls" style="display:none">
+    </div>
+
+    <div class="card" id="uploadPasteCard" style="display:none;">
+      <h2>Copy &amp; Paste</h2>
+      <div class="hint">Paste cells copied directly from Excel or Google Sheets (first column = line item, other columns = each period).</div>
+      <textarea id="csvPaste" placeholder="Revenue	1800	2100	2400&#10;Cost of goods sold	1080	1230	1392"></textarea>
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="btn secondary" id="btnTemplate">Copy a blank template</button>
+        <button class="btn" id="btnParsePaste">Parse pasted data</button>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn secondary" id="btnSampleInline">Or try a sample business first</button>
+      <span class="copy-feedback" id="copyFeedback"></span>
+    </div>
+    <div id="parseStatus"></div>
+
+    <div class="stmt-chip-row" id="stmtChipRow"></div>
+
+    <div class="card" id="statementEditorCard" style="display:none;">
+      <h2>Confirm &amp; review your numbers</h2>
+      <div class="hint">Check the mapping on anything the tool guessed — click a cell to edit a number directly.</div>
+      <div id="statementEditor"></div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn" id="btnGoResults">Analyze →</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== RESULTS ===================== -->
+<section id="screen-results" class="stage-screen" style="display:none; align-items:flex-start;">
+  <div class="stage-inner" style="max-width:1100px;">
+    <div class="stagebar">
+      <div class="left"><button class="navbtn" id="resultsBack">← Back to Upload</button></div>
+      <div class="title"><em>Virtual</em> CFO <span class="mono" id="resultsCompany" style="font-size:13px; color:var(--fg-muted); margin-left:10px;"></span></div>
+      <button class="navbtn home" id="resultsHome">Go Home</button>
+    </div>
+
+    <div class="rtabbar" role="tablist" id="rtabbar">
+      <button role="tab" data-rtab="summary" aria-selected="true">1 · Executive Summary</button>
+      <button role="tab" data-rtab="ratios" aria-selected="false">2 · Ratio Detail</button>
+      <button role="tab" data-rtab="statements" aria-selected="false">3 · Your Statements</button>
+      <button role="tab" data-rtab="outlook" aria-selected="false">4 · Outlook</button>
+    </div>
+
+    <!-- TAB 1 -->
+    <div class="rpanel active" id="rpanel-summary">
+      <div id="verdictBanner"></div>
+      <div class="kpi-grid" id="kpiGrid" style="margin-bottom:16px;"></div>
+      <div class="card" id="execSummaryCard"></div>
+      <div id="flagReport"></div>
+    </div>
+
+    <!-- TAB 2 -->
+    <div class="rpanel" id="rpanel-ratios">
+      <div class="btn-row"><button class="btn secondary" id="btnCopyRatios">Copy table as CSV</button></div>
+      <div id="pillarTables"></div>
+    </div>
+
+    <!-- TAB 3 -->
+    <div class="rpanel" id="rpanel-statements">
+      <div class="card">
+        <h2>Data integrity</h2>
+        <div class="hint">Every check below re-derives a subtotal from its parts and compares it to what was reported — a mismatch usually means a mapping needs fixing.</div>
+        <div id="integrityBar"></div>
+      </div>
+      <div class="card">
+        <h2>Your normalized statements</h2>
+        <div class="hint">Editable — change any number and everything recalculates. Statements you didn't upload show as not provided, not zero.</div>
+        <div id="statementEditor2"></div>
+        <div class="btn-row" style="margin-top:12px;">
+          <button class="btn" id="btnRecalc">Recalculate Analysis</button>
+          <button class="btn secondary" id="btnResetOriginal">Reset to Original Upload</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4 -->
+    <div class="rpanel" id="rpanel-outlook">
+      <div class="card" id="outlookIntro"></div>
+      <div class="card" id="outlookScenarioCard" style="display:none;">
+        <h2>Scenario</h2>
+        <div class="hint">Pick a path for next period's revenue — projections update instantly.</div>
+        <div class="btn-row">
+          <button class="route-btn" data-scenario="trend">Continue current trend</button>
+          <button class="route-btn" data-scenario="flat">Stays flat</button>
+          <button class="route-btn" data-scenario="down">Drops 10%</button>
+          <button class="route-btn" data-scenario="custom">Custom (set your own)</button>
+        </div>
+        <div id="outlookCustomSliders" class="outlook-sliders" style="display:none;"></div>
+        <div class="kpi-grid" id="outlookKpiGrid" style="margin-top:14px;"></div>
+      </div>
+    </div>
+
+    <div class="footer-note">A general-purpose small-business financial analysis tool · all calculations run locally in your browser, nothing is uploaded anywhere</div>
+  </div>
+</section>
+
+</div>
+
+<script>
+/* =========================================================================
+   STANDARD LINE TAXONOMY
+   ========================================================================= */
+const STANDARD_LINES = [
+  { key:"revenue", label:"Revenue", stmt:"IS", hint:"Net sales / total revenues" },
+  { key:"cogs", label:"Cost of Sales", stmt:"IS", hint:"Cost of goods sold / merchandise costs" },
+  { key:"opex", label:"Operating Expenses", stmt:"IS", hint:"SG&A, rent and other operating costs, excluding D&A" },
+  { key:"da", label:"Depreciation & Amortization", stmt:"IS", hint:"D&A shown as its own income statement line" },
+  { key:"opinc_r", label:"Operating Income (reported)", stmt:"IS", hint:"Reported operating profit (used for a check)" },
+  { key:"net_interest", label:"Net Interest Income (Expense)", stmt:"IS", hint:"Net interest, sign as reported (expense is negative)" },
+  { key:"other_nonop", label:"Other Non-operating Income (Expense)", stmt:"IS", hint:"Items below operating income (sign as reported)" },
+  { key:"pretax_r", label:"Pretax Income (reported)", stmt:"IS", hint:"Earnings before income tax (used for a check)" },
+  { key:"tax", label:"Income Tax Expense", stmt:"IS", hint:"Income tax expense as a positive number" },
+  { key:"nci", label:"Noncontrolling Interests", stmt:"IS", hint:"Net income attributable to noncontrolling interests" },
+  { key:"ni_r", label:"Net Income (reported)", stmt:"IS", hint:"Net income attributable to the company's owners" },
+  { key:"cash", label:"Cash & Equivalents", stmt:"BS", hint:"Cash, cash equivalents and short-term investments" },
+  { key:"receivables", label:"Receivables", stmt:"BS", hint:"Accounts and other receivables" },
+  { key:"inventory", label:"Inventory", stmt:"BS", hint:"Inventories" },
+  { key:"other_ca", label:"Other Current Assets", stmt:"BS", hint:"Prepaids, other current assets" },
+  { key:"tca_r", label:"Total Current Assets (reported)", stmt:"BS", hint:"Reported total current assets (used for a check)" },
+  { key:"ppe", label:"PP&E, Net", stmt:"BS", hint:"Property, plant and equipment, net" },
+  { key:"gw_intang", label:"Goodwill & Intangibles", stmt:"BS", hint:"Goodwill plus intangible assets" },
+  { key:"other_nca", label:"Other Non-current Assets", stmt:"BS", hint:"Other long-term assets" },
+  { key:"ta_r", label:"Total Assets (reported)", stmt:"BS", hint:"Reported total assets (used for a check)" },
+  { key:"ap", label:"Accounts Payable", stmt:"BS", hint:"Trade accounts payable" },
+  { key:"current_debt", label:"Current Debt", stmt:"BS", hint:"Current portion of long-term debt, short-term borrowings" },
+  { key:"other_cl", label:"Other Current Liabilities", stmt:"BS", hint:"Accrued expenses, other current liabilities" },
+  { key:"tcl_r", label:"Total Current Liabilities (reported)", stmt:"BS", hint:"Reported total current liabilities (used for a check)" },
+  { key:"ltd", label:"Long-term Debt", stmt:"BS", hint:"Long-term debt" },
+  { key:"other_ncl", label:"Other Non-current Liabilities", stmt:"BS", hint:"Deferred taxes, other long-term liabilities" },
+  { key:"tl_r", label:"Total Liabilities (reported)", stmt:"BS", hint:"Reported total liabilities (used for a check)" },
+  { key:"equity", label:"Total Equity", stmt:"BS", hint:"Total stockholders' equity" },
+  { key:"tle_r", label:"Total Liabilities & Equity (reported)", stmt:"BS", hint:"Reported total liabilities and equity (used for a check)" },
+  { key:"cfo", label:"Operating Cash Flow", stmt:"CF", hint:"Net cash provided by operating activities" },
+  { key:"capex", label:"Capital Expenditures", stmt:"CF", hint:"Payments for property and equipment (outflow negative)" },
+  { key:"dividends", label:"Dividends Paid", stmt:"CF", hint:"Dividends paid (outflow negative)" },
+  { key:"buybacks", label:"Share Repurchases", stmt:"CF", hint:"Treasury stock purchases (outflow negative)" },
+  { key:"debt_issued_repaid", label:"Debt Issued (Repaid)", stmt:"CF", hint:"Debt proceeds and payments, sign as reported" },
+  { key:"cf_end_cash_r", label:"CF Ending Cash (reported)", stmt:"CF", hint:"Cash at end of period per the cash flow statement" },
+];
+const STMT_LABEL = { IS:"Income Statement", BS:"Balance Sheet", CF:"Cash Flow" };
+const LINE_BY_KEY = Object.fromEntries(STANDARD_LINES.map(l => [l.key, l]));
+
+const LINE_SYNONYMS = {
+  revenue: ["sales","total revenue","net sales","total sales","turnover","net revenue","gross sales","total income","income","total revenues","revenues","total income","sales revenue","service revenue","total sales revenue"],
+  cogs: ["cost of goods sold","cogs","cost of sales","cost of revenue","cost of products sold","cost of services","total cost of goods sold","total cost of sales","total cogs","total cost of revenue","cost of goods sold cogs"],
+  opex: ["sg a","selling general and administrative","selling general administrative expenses","operating expenses","sg and a expenses","total operating expenses","general and administrative expenses","overhead","total expenses","total operating expense","total operating expenses","total selling general and administrative expenses"],
+  da: ["depreciation and amortization","depreciation amortization","d a expense","depreciation expense","depreciation and amortization expense","total depreciation and amortization","depreciation and amortization expense total"],
+  opinc_r: ["operating income","operating profit","income from operations","operating earnings","ebit","net operating income","net operating profit","operating income loss","income loss from operations","operating profit loss"],
+  net_interest: ["interest expense","net interest expense","interest expense net","interest income expense","interest expense net of interest income","other interest expense","total interest expense","net interest","interest net"],
+  other_nonop: ["other income expense","other non operating income expense","other income","other expense","non operating income expense","gain loss on sale of assets","net other income","total other income expense","net other income expense","total other income"],
+  pretax_r: ["income before tax","income before taxes","income before income taxes","pretax income","earnings before tax","earnings before income tax","net earnings before income tax expense","net income before taxes"],
+  tax: ["income tax expense","provision for income taxes","income taxes","tax expense","income tax provision","total income tax expense","total income taxes","income tax expense benefit"],
+  nci: ["noncontrolling interests","minority interest","net income attributable to noncontrolling interests"],
+  ni_r: ["net income","net earnings","net profit","net income attributable to common","profit for the year","net earnings","net income loss","bottom line"],
+  cash: ["cash and cash equivalents","cash and equivalents","cash short term investments","cash on hand","cash in bank","cash and bank balances","total cash and cash equivalents","total bank accounts","total cash"],
+  receivables: ["accounts receivable","trade receivables","receivables net","accounts receivable net","ar","customer receivables","total accounts receivable","total receivables","receivables net of allowance"],
+  inventory: ["inventory","inventories","merchandise inventory","inventory net","total inventory","total inventories"],
+  other_ca: ["other current assets","prepaid expenses","prepaid and other current assets","prepaid expenses and other current assets","total other current assets"],
+  tca_r: ["total current assets"],
+  ppe: ["property plant and equipment","property plant equipment net","fixed assets net","ppe net","property and equipment net","net property and equipment","total fixed assets","total property plant and equipment","property plant and equipment net","net fixed assets"],
+  gw_intang: ["goodwill and intangible assets","intangible assets","goodwill intangibles","goodwill and intangibles net","total intangible assets","total goodwill and intangibles"],
+  other_nca: ["other non current assets","other long term assets","other assets noncurrent","long term assets other","other assets","total other assets","total other long term assets","total other non current assets"],
+  ta_r: ["total assets"],
+  ap: ["accounts payable","trade payables","trade accounts payable","accounts payable trade","ap","total accounts payable","total trade payables"],
+  current_debt: ["current portion of long term debt","short term debt","current debt","current maturities of long term debt","notes payable current","line of credit"],
+  other_cl: ["other current liabilities","accrued liabilities","accrued expenses","accrued expenses and other current liabilities","total other current liabilities","total accrued liabilities","total accrued expenses"],
+  tcl_r: ["total current liabilities"],
+  ltd: ["long term debt","long term debt net of current portion","long term borrowings","notes payable long term","loans payable long term","total long term debt","total long term borrowings"],
+  other_ncl: ["other non current liabilities","other long term liabilities","deferred tax liabilities","other liabilities noncurrent","total other long term liabilities","total other non current liabilities"],
+  tl_r: ["total liabilities"],
+  equity: ["total equity","total stockholders equity","total shareholders equity","stockholders equity","shareholders equity","owners equity","members equity","retained earnings and capital","total owners equity","total owner s equity","total members equity","total shareholders equity","total stockholders equity"],
+  tle_r: ["total liabilities and equity","total liabilities and stockholders equity","total liabilities and shareholders equity"],
+  cfo: ["net cash provided by operating activities","cash from operations","operating cash flow","net cash from operating activities","cash provided by operations","net cash provided by used in operating activities","cash flow from operations","net cash from operating activities","net cash provided by operating activities","total cash from operating activities","cash flows from operating activities total"],
+  capex: ["capital expenditures","capex","purchases of property and equipment","purchases of property plant and equipment","payments for property and equipment","payments for property plant and equipment","purchase of property and equipment","purchases of fixed assets","purchase of fixed assets","capital spending"],
+  dividends: ["dividends paid","cash dividends paid","distributions to owners","distributions paid","total dividends paid","owner distributions","owners draw","owner draws"],
+  buybacks: ["share repurchases","treasury stock purchases","repurchase of common stock","stock buybacks"],
+  debt_issued_repaid: ["debt issued repaid","proceeds from repayments of debt","net borrowings repayments","proceeds from issuance of debt","repayments of debt"],
+  cf_end_cash_r: ["cash end of period","cash at end of period","cash and cash equivalents at end of period","ending cash","ending cash balance","cash end of year","cash at end of year","cash equivalents end of period"],
+};
+
+function normalizeLabel(s){
+  return (s || "").toLowerCase().replace(/&/g, " and ").replace(/[(),.\-–—_/]/g, " ").replace(/\s+/g, " ").trim();
+}
+function tokenOverlapScore(a, b){
+  const ta = a.split(" ").filter(Boolean), tb = b.split(" ").filter(Boolean);
+  if(!ta.length || !tb.length) return 0;
+  const setB = new Set(tb);
+  const shared = ta.filter(w => setB.has(w)).length;
+  return shared / Math.max(ta.length, tb.length);
+}
+function bestMapKeyGuessEx(label, forcedStmt){
+  const t = normalizeLabel(label);
+  if(!t) return { key:"", tier:0 };
+  const candidates = forcedStmt ? STANDARD_LINES.filter(l => l.stmt === forcedStmt) : STANDARD_LINES;
+  // Tier 1: exact label match (e.g. "Revenue" === "Revenue").
+  for(const l of candidates){ if(normalizeLabel(l.label) === t) return { key:l.key, tier:1 }; }
+  // Tier 2: exact synonym match (e.g. "Sales" === a known synonym of revenue).
+  // Deliberately NOT a substring/containment check here — "Sales" is a
+  // substring of "Cost of Sales" and a naive containment match would
+  // misroute it, which is exactly the kind of silent mis-mapping that
+  // makes an auto-parser untrustworthy.
+  for(const l of candidates){
+    const syns = LINE_SYNONYMS[l.key];
+    if(syns && syns.some(s => normalizeLabel(s) === t)) return { key:l.key, tier:2 };
+  }
+  // Tier 3: best token-overlap score across the label + all its synonyms,
+  // must clear a 0.6 threshold. This naturally prefers the candidate whose
+  // words most fully cover the uploaded label (so "Sales" scores 1.0
+  // against revenue's "sales" synonym but only ~0.3 against "Cost of
+  // Sales"), without the false positives a raw substring check produces.
+  // Tier-3 matches are only a hint: the mapping engine confirms them against
+  // the numbers (does the row actually act like a total?) before trusting them.
+  let best = null, bestScore = 0;
+  candidates.forEach(l => {
+    const texts = [l.label, ...(LINE_SYNONYMS[l.key] || [])].map(normalizeLabel);
+    texts.forEach(txt => { const score = tokenOverlapScore(t, txt); if(score > bestScore){ bestScore = score; best = l; } });
+  });
+  return (best && bestScore >= 0.6) ? { key:best.key, tier:3 } : { key:"", tier:0 };
+}
+function bestMapKeyGuess(label, forcedStmt){ return bestMapKeyGuessEx(label, forcedStmt).key; }
+
+/* =========================================================================
+   PROFILE OPTION LIBRARIES — every list below ends in an explicit
+   "Not sure" option that maps to a neutral / no-adjustment behavior.
+   ========================================================================= */
+const INDUSTRIES = [
+  { key:"retail", label:"Retail / E-commerce", note:"Thin margins and fast inventory turns are normal; current ratio and DSO should stay tight.", thresholds:{ maxRiseDSO:3 }, hide:[] },
+  { key:"restaurant", label:"Restaurant / Food Service", note:"A current ratio under 1.0 is common and not alarming here.", thresholds:{ minCurrentRatio:0.8, maxDebtEquity:3, minInterestCoverage:2.5, maxRiseDSO:2 }, hide:[] },
+  { key:"saas", label:"Software / SaaS / Tech", note:"Little debt and no inventory expected; coverage expectations run higher.", thresholds:{ minCurrentRatio:1.5, maxDebtEquity:1, minInterestCoverage:5, maxNetDebtEbitda:2 }, hide:["dio","cashConversionCycle"] },
+  { key:"manufacturing", label:"Manufacturing / Wholesale", note:"Higher working-capital needs with inventory and B2B terms are normal.", thresholds:{ minCurrentRatio:1.3, maxRiseDSO:7, maxNetDebtEbitda:3.5 }, hide:[] },
+  { key:"construction", label:"Construction / Contracting", note:"Progress billing makes slow receivables normal.", thresholds:{ minCurrentRatio:1.2, maxDebtEquity:2.5, minInterestCoverage:2.5, maxRiseDSO:10, maxNetDebtEbitda:3.5 }, hide:["dio","cashConversionCycle"] },
+  { key:"services", label:"Professional Services", note:"Low capital needs mean little debt is expected; no inventory.", thresholds:{ minCurrentRatio:1.2, maxDebtEquity:1, minInterestCoverage:5, maxRiseDSO:7, maxNetDebtEbitda:2 }, hide:["dio","cashConversionCycle"] },
+  { key:"realestate", label:"Real Estate / Property Management", note:"High leverage is structurally normal here — thresholds are set looser.", thresholds:{ maxDebtEquity:4, minInterestCoverage:2, maxNetDebtEbitda:6, maxRiseDSO:10 }, hide:["dio","cashConversionCycle","grossMargin"] },
+  { key:"other", label:"Not sure / general business", note:"Using general-purpose thresholds since no specific industry was picked.", thresholds:{}, hide:[] },
+];
+const ACCOUNTING_METHODS = [
+  { key:"accrual", label:"Accrual Basis (GAAP / IFRS)", note:"" },
+  { key:"cash", label:"Cash Basis", note:"Receivables/payables may not reflect true invoicing activity — DSO/DPO-based flags are turned off." },
+  { key:"notsure", label:"Not sure", note:"" },
+];
+const INVENTORY_MODELS = [
+  { key:"fifo", label:"FIFO / Average Cost", note:"" },
+  { key:"lifo", label:"LIFO (with LIFO Reserve)", note:"LIFO inventory can run below true replacement cost — read days-inventory-outstanding with that in mind." },
+  { key:"service", label:"Service / Non-Inventory Business", note:"Inventory-based metrics don't apply here and are hidden." },
+  { key:"notsure", label:"Not sure", note:"" },
+];
+const RISK_SENSITIVITY = [
+  { key:"conservative", label:"Conservative (Strict Flags)", note:"Thresholds tighten — flags trip earlier." },
+  { key:"standard", label:"Standard / Not Sure", note:"" },
+  { key:"aggressive", label:"Aggressive Growth Mode", note:"Thresholds loosen for the swings typical of a fast-growing business." },
+];
+const CUSTOMER_TERMS = [
+  { key:"pos", label:"At the time of purchase (cash / card)", dsoTarget:5 },
+  { key:"net30", label:"Invoices due within 30 days", dsoTarget:30 },
+  { key:"net60", label:"Invoices due in 30–60+ days", dsoTarget:60 },
+  { key:"notsure", label:"Not sure", dsoTarget:null },
+];
+const SUPPLIER_TERMS = [
+  { key:"immediate", label:"Immediately / upon delivery", dpoTarget:5 },
+  { key:"net30", label:"Within 30 days", dpoTarget:30 },
+  { key:"net60", label:"30–60+ days", dpoTarget:60 },
+  { key:"notsure", label:"Not sure", dpoTarget:null },
+];
+const OWNERSHIP = [
+  { key:"rent", label:"Rent / lease your business location", debtMult:1 },
+  { key:"mortgage", label:"Own with a mortgage", debtMult:1.3, note:"Mortgage debt against real property is more tolerable than unsecured debt — debt thresholds are loosened." },
+  { key:"owned", label:"Own outright / no mortgage", debtMult:1 },
+  { key:"notsure", label:"Not sure", debtMult:1 },
+];
+const GOAL = [
+  { key:"reserves", label:"Maximize profit and build cash reserves", suppress:false },
+  { key:"growth", label:"Reinvest heavily for fast growth (thin or temporary loss on purpose)", suppress:true, note:"Negative free cash flow and margin compression are treated as intentional growth investment, not flagged as critical." },
+  { key:"notsure", label:"Not sure", suppress:false },
+];
+const PURCHASE_MODEL = [
+  { key:"onetime", label:"One-time orders or pay-per-job", loosen:false },
+  { key:"subscription", label:"Ongoing subscriptions, retainers, or contracts", loosen:true, note:"Predictable recurring revenue lowers default risk — current ratio and interest coverage bars are loosened slightly." },
+  { key:"notsure", label:"Not sure", loosen:false },
+];
+const PERIOD_TYPES = [
+  { key:"month", label:"One month", days:30 },
+  { key:"quarter", label:"One quarter (3 months)", days:91 },
+  { key:"half", label:"Half year (6 months)", days:182 },
+  { key:"year", label:"Full year (annual)", days:365 },
+  { key:"ttm", label:"Trailing twelve months", days:365 },
+];
+
+const DEFAULT_THRESHOLDS = [
+  { key:"minCurrentRatio", label:"Minimum current ratio", value:1, desc:"Flag if the latest period is below this", fmt:"x" },
+  { key:"maxDebtEquity", label:"Maximum debt to equity", value:2, desc:"Flag if above", fmt:"x" },
+  { key:"minInterestCoverage", label:"Minimum interest coverage", value:3, desc:"Flag if below", fmt:"x" },
+  { key:"maxNetDebtEbitda", label:"Maximum net debt / EBITDA", value:3, desc:"Flag if above", fmt:"x" },
+  { key:"maxDropOpMargin", label:"Max drop in operating margin (pts)", value:0.01, desc:"Flag if it falls more than this vs. prior period", fmt:"pts" },
+  { key:"maxDropNetMargin", label:"Max drop in net margin (pts)", value:0.01, desc:"Flag if it falls more than this vs. prior period", fmt:"pts" },
+  { key:"maxRiseDSO", label:"Max rise in days sales outstanding", value:5, desc:"Flag if DSO rises by more than this many days", fmt:"days" },
+  { key:"minCfoNi", label:"Minimum CFO / net income", value:1, desc:"Flag if operating cash flow is below net income", fmt:"x" },
+  { key:"minFcf", label:"Minimum free cash flow", value:0, desc:"Flag if free cash flow is below this", fmt:"$" },
+];
+
+function industryThresholds(industryKey){
+  const base = Object.fromEntries(DEFAULT_THRESHOLDS.map(t => [t.key, t.value]));
+  const ind = INDUSTRIES.find(i => i.key === industryKey);
+  if(ind) Object.assign(base, ind.thresholds);
+  return base;
+}
+function riskMultiplier(key, sensitivity){
+  if(sensitivity === "conservative") return key.startsWith("min") ? 1.2 : 0.8;
+  if(sensitivity === "aggressive") return key.startsWith("min") ? 0.8 : 1.2;
+  return 1;
+}
+
+/* =========================================================================
+   SAMPLE DATA — a fictional small retail business, demo only.
+   ========================================================================= */
+const SAMPLE_YEARS = ["Year 1","Year 2","Year 3"];
+const SAMPLE_YEAR_NOTE = "Illustrative sample business — figures are fictional, in $000s, for demonstration only.";
+const SAMPLE_ROWS_RAW = [
+["IS","Sales","revenue",1800,2100,2400,""],
+["IS","Cost of goods sold","cogs",1080,1230,1392,""],
+["IS","Operating expenses (SG&A)","opex",540,610,690,""],
+["IS","Depreciation and amortization","da",40,45,50,""],
+["IS","Operating profit","opinc_r",140,215,268,""],
+["IS","Net interest expense","net_interest",-15,-18,-20,""],
+["IS","Net earnings before income tax expense","pretax_r",125,197,248,""],
+["IS","Income tax expense","tax",31,49,62,""],
+["IS","Net earnings","ni_r",94,148,186,""],
+["BS","Cash and equivalents","cash",150,220,310,""],
+["BS","Receivables","receivables",180,210,240,""],
+["BS","Inventory","inventory",220,250,270,""],
+["BS","Prepaid and other current assets","other_ca",20,25,30,""],
+["BS","Total current assets","tca_r",570,705,850,""],
+["BS","Property, plant and equipment, net","ppe",400,430,460,""],
+["BS","Goodwill and intangibles","gw_intang",50,50,50,""],
+["BS","Other assets","other_nca",30,30,30,""],
+["BS","Total assets","ta_r",1050,1215,1390,""],
+["BS","Accounts payable","ap",160,180,200,""],
+["BS","Current portion of long-term debt","current_debt",30,30,35,""],
+["BS","Other current liabilities","other_cl",60,65,70,""],
+["BS","Total current liabilities","tcl_r",250,275,305,""],
+["BS","Long-term debt","ltd",300,320,330,""],
+["BS","Other long-term liabilities","other_ncl",40,45,50,""],
+["BS","Total liabilities","tl_r",590,640,685,""],
+["BS","Total equity","equity",460,575,705,""],
+["BS","Total liabilities and equity","tle_r",1050,1215,1390,""],
+["CF","Net cash provided by operating activities","cfo",160,210,260,""],
+["CF","Payments for property and equipment","capex",-80,-90,-100,""],
+["CF","Debt issued (repaid)","debt_issued_repaid",10,10,-5,""],
+["CF","Dividends paid","dividends",-20,-25,-30,""],
+["CF","Cash, end of period","cf_end_cash_r",150,220,310,""],
+];
+
+/* =========================================================================
+   STATE
+   ========================================================================= */
+let state = {
+  companyName: "Your Business",
+  years: [],
+  rows: [],
+  originalRows: null,
+  thresholds: JSON.parse(JSON.stringify(DEFAULT_THRESHOLDS)),
+  yearNote: "",
+  periodType: "year",
+  profile: { industry:"retail", method:"accrual", inventoryModel:"fifo", riskSensitivity:"standard",
+             customerTerms:"notsure", supplierTerms:"notsure", ownership:"notsure", goal:"notsure", purchaseModel:"notsure" },
+  isSample: false,
+  uploadMode: "one",
+  outlookScenario: "trend",
+  outlookCustom: null,
+};
+let rowSeq = 1;
+const CURRENCY_SYMBOL = "$";
+
+const PROFILE_FIELDS = [
+  { key:"industry", title:"What industry is the business in?", options:INDUSTRIES },
+  { key:"method", title:"What accounting method do you use?", options:ACCOUNTING_METHODS },
+  { key:"inventoryModel", title:"How is inventory costed?", options:INVENTORY_MODELS },
+  { key:"riskSensitivity", title:"How strict should flags be?", options:RISK_SENSITIVITY },
+  { key:"customerTerms", title:"How do your customers usually pay you?", options:CUSTOMER_TERMS },
+  { key:"supplierTerms", title:"How fast do you pay your suppliers or vendors?", options:SUPPLIER_TERMS },
+  { key:"ownership", title:"Do you rent or own your business location?", options:OWNERSHIP },
+  { key:"goal", title:"What's your main financial goal right now?", options:GOAL },
+  { key:"purchaseModel", title:"How do customers purchase from you?", options:PURCHASE_MODEL },
+];
+
+function applyProfile(){
+  const base = industryThresholds(state.profile.industry);
+  const sub = PURCHASE_MODEL.find(p => p.key === state.profile.purchaseModel);
+  const own = OWNERSHIP.find(o => o.key === state.profile.ownership);
+  state.thresholds = DEFAULT_THRESHOLDS.map(t => {
+    let v = base[t.key] * riskMultiplier(t.key, state.profile.riskSensitivity);
+    if(sub && sub.loosen){
+      if(t.key === "minCurrentRatio") v *= 0.85;
+      if(t.key === "minInterestCoverage") v *= 0.8;
+    }
+    if(own && own.debtMult !== 1){
+      if(t.key === "maxDebtEquity" || t.key === "maxNetDebtEbitda") v *= own.debtMult;
+    }
+    return { ...t, value: Math.round(v * 10000) / 10000 };
+  });
+}
+
+function periodDays(){ const p = PERIOD_TYPES.find(p => p.key === state.periodType); return p ? p.days : 365; }
+function periodLabel(){ return (state.periodType === "year" || state.periodType === "ttm") ? "year-over-year" : "period-over-period"; }
+
+function loadSample(){
+  state.isSample = true;
+  state.outlookCustom = null;
+  state.years = SAMPLE_YEARS.slice();
+  state.companyName = "Sample Retail Co. (fictional)";
+  state.yearNote = SAMPLE_YEAR_NOTE;
+  state.periodType = "year";
+  state.rows = SAMPLE_ROWS_RAW.map(([stmt,item,mapKey,...rest]) => {
+    const note = rest.pop();
+    const values = {};
+    SAMPLE_YEARS.forEach((y,i) => values[y] = rest[i]);
+    return { id: rowSeq++, stmt, item, mapKey, values, note };
+  });
+  state.originalRows = JSON.parse(JSON.stringify(state.rows));
+}
+function emptyState(){
+  state.isSample = false;
+  state.outlookCustom = null;
+  state.years = ["Period 1","Period 2","Period 3"];
+  state.yearNote = "";
+  state.rows = [];
+  state.originalRows = null;
+}
+
+/* =========================================================================
+   PARSING
+   ========================================================================= */
+function parseNumericCell(v){
+  if(v === null || v === undefined) return NaN;
+  if(typeof v === "number") return v;
+  let s = v.toString().trim();
+  if(!s) return NaN;
+  let neg = false;
+  if(/^\(.*\)$/.test(s)){ neg = true; s = s.slice(1, -1); }
+  s = s.replace(/[$,£€%]/g, "").replace(/,/g, "").replace(/−/g, "-").trim();
+  if(s === "" || s === "-" || s === "—" || s === "–" || s.toLowerCase() === "n/a" || s.toLowerCase()==="nm") return NaN;
+  const n = parseFloat(s);
+  if(Number.isNaN(n)) return NaN;
+  return neg ? -Math.abs(n) : n;
+}
+/* ==== MAPPING ENGINE (begin) ==== */
+const IGNORE_KEY = "__ignore";
+const MONTH_NUM = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+
+function excelSerialToISO(n){ return new Date(Date.UTC(1899,11,30) + n*86400000).toISOString().slice(0,10); }
+function cleanHeaderLabel(h){
+  const s = (h===undefined || h===null) ? "" : h.toString().trim();
+  if(/^\d{5}(\.\d+)?$/.test(s)){ const n = Number(s); if(n > 20000 && n < 80000) return excelSerialToISO(Math.floor(n)); }
+  return s;
+}
+
+/* ---- period (column) ordering: statements are analyzed oldest -> newest ---- */
+function periodSortKey(label){
+  const s = String(label || "");
+  const ym = s.match(/(?:^|[^0-9])((?:19|20)\d{2})(?![0-9])/);
+  if(!ym) return null;
+  const year = Number(ym[1]);
+  let sub = 0, m;
+  if((m = s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.]((?:19|20)\d{2})/))){ const a = Number(m[1]), b = Number(m[2]); sub = (a > 12 ? b : a); }
+  else if((m = s.match(/((?:19|20)\d{2})[\/\-.](\d{1,2})/))){ sub = Number(m[2]); }
+  else if((m = s.toLowerCase().match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*/))){ sub = MONTH_NUM[m[1]]; }
+  else if((m = s.match(/\bQ([1-4])\b/i))){ sub = Number(m[1]) * 3; }
+  return year * 100 + sub;
+}
+function orderPeriods(years){
+  const keys = years.map(periodSortKey);
+  if(years.length < 2 || keys.some(k => k === null) || new Set(keys).size !== keys.length) return { years, note:"" };
+  let asc = true, desc = true;
+  for(let i = 1; i < keys.length; i++){ if(keys[i] < keys[i-1]) asc = false; if(keys[i] > keys[i-1]) desc = false; }
+  if(asc) return { years, note:"" };
+  const sorted = years.slice().sort((a,b) => periodSortKey(a) - periodSortKey(b));
+  return { years: sorted, note: desc
+    ? "Your columns were listed newest → oldest, so we flipped them to oldest → newest before analyzing (growth and year-over-year changes depend on the right order)."
+    : "Your columns weren't in date order, so we sorted them oldest → newest before analyzing." };
+}
+
+/* ---- header / section context ---- */
+function cleanForRules(s){ return normalizeLabel(s).replace(/[^a-z0-9' ]/g, " ").replace(/\s+/g, " ").trim(); }
+function stmtFromHeader(h){
+  const t = cleanForRules(h);
+  if(/\b(balance sheet|statement of financial position)\b/.test(t)) return "BS";
+  if(/\b(income statement|profit and loss|p and l|statements? of (operations|earnings|income)|statement of comprehensive income)\b/.test(t)) return "IS";
+  if(/\bcash flows?\b/.test(t)) return "CF";
+  return null;
+}
+function sectionOf(h){
+  const t = cleanForRules(h);
+  if(!t) return "";
+  if(/\bcurrent assets?\b/.test(t)) return "ca";
+  if(/\b(non ?current|long term|fixed|other) assets?\b/.test(t) || /^property\b/.test(t)) return "nca";
+  if(/\bcurrent liabilit/.test(t)) return "cl";
+  if(/\b(non ?current|long term) liabilit/.test(t)) return "ncl";
+  if(/\b(equity|stockholders|shareholders|owners?|capital)\b/.test(t) && !/\bcost\b/.test(t)) return "eq";
+  if(/^(income|revenues?|sales|net sales|operating revenues?)$/.test(t)) return "rev";
+  if(/\bcost of (goods|sales|revenue)|\bcogs\b/.test(t)) return "cogs";
+  if(/\bother (income|expenses?)\b/.test(t)) return "nonop";
+  if(/\bexpenses?\b|\boverhead\b|\bselling\b/.test(t)) return "opex";
+  if(/\bincome tax|\btaxes\b/.test(t)) return "tax";
+  if(/\boperating activities\b/.test(t)) return "cfo";
+  if(/\binvesting activities\b/.test(t)) return "cfi";
+  if(/\bfinancing activities\b/.test(t)) return "cff";
+  return "";
+}
+
+/* ---- keyword classification for rows with no exact match and no subtotal to
+        reconcile against. Returns "" when it isn't confident. ---- */
+function classifyIS(t, sec){
+  if(/\b(depreciation|amortization|amortisation)\b/.test(t)) return "da";
+  if(/\binterest\b/.test(t)) return "net_interest";
+  if(/\b(income tax(es)?|provision for (income )?tax(es)?|federal (income )?tax|state (income )?tax|taxes on income)\b/.test(t)) return "tax";
+  if(/\b(gain|loss) on (sale|disposal|disposition)\b|\bother (income|expenses?)\b|\bnon operating\b|\bmiscellaneous income\b/.test(t)) return "other_nonop";
+  if(/\b(cost of (goods|sales|revenue|merchandise|products|services)|cogs|merchandise (cost|costs|expensed|purchases)|freight in|inbound (freight|shipping)|direct (labor|materials|costs?)|purchases|shrinkage|packaging materials|inventory (adjustments?|write downs?))\b/.test(t)) return "cogs";
+  if(/\b(sales|revenues?|fees earned|service fees?|membership|royalt(y|ies)|gift card redemptions?|shipping revenue|income from (sales|services))\b/.test(t)
+     && !/\b(sales tax|sales commissions?|sales and marketing|sales expense|cost of)\b/.test(t)) return "revenue";
+  if(/\b(salar(y|ies)|wages?|payroll|rent|utilit(y|ies)|insurance|advertis\w*|marketing|supplies|office|software|subscriptions?|telephone|internet|repairs?|maintenance|professional fees?|legal|accounting|bank|merchant|travel|meals|entertainment|dues|training|education|security|cleaning|janitorial|postage|equipment rental|bad debt|charitable|contributions?|licen[sc]es?|permits|miscellaneous|benefits|401 k|workers comp\w*|commissions?|common area|website|platform fees|expenses?)\b/.test(t)) return "opex";
+  return ({ rev:"revenue", cogs:"cogs", opex:"opex", nonop:"other_nonop", tax:"tax" })[sec] || "";
+}
+function classifyBS(t, sec){
+  if(/\b(deferred (rent|tax|compensation|income)|lease liabilit\w*|asset retirement)\b/.test(t)){
+    return (/\bcurrent\b/.test(t) && !/\bnon ?current\b/.test(t)) ? "other_cl" : "other_ncl";
+  }
+  if(/\b(retained earnings|common stock|preferred stock|paid in capital|additional paid in|treasury|accumulated other comprehensive|opening balance equity|owner'?s? (equity|capital|draws?|contributions?|investment)|members? (equity|capital|draws?|distributions?)|partners? (capital|equity)|stockholders|shareholders|net income)\b/.test(t)) return "equity";
+  if(/\b(accounts payable|trade payables?|vendor payables?|payables? (to|owed|accrued|for))\b/.test(t)) return "ap";
+  if(/\b(loans?|debt|notes? payable|mortgage|sba|financing|borrowings?|line of credit|revolving|bonds?|credit facility|credit cards?)\b/.test(t)){
+    if(/\b(current portion|current maturities|due within|short term)\b/.test(t)) return "current_debt";
+    if(/\b(long term|non ?current)\b/.test(t)) return "ltd";
+    if(sec === "cl") return "current_debt";
+    if(sec === "ncl") return "ltd";
+    return /\b(line of credit|credit cards?|revolving)\b/.test(t) ? "current_debt" : "ltd";
+  }
+  if(/\b(other (long term|non ?current) liabilit\w*|long term (liabilit\w*|obligations?)|miscellaneous (long term|non ?current)|noncurrent liabilit\w*)\b/.test(t)) return "other_ncl";
+  if(/\b(accrued|payroll|sales tax|customer deposits?|gift cards?|deferred revenue|unearned|(income )?taxes? payable|interest payable|wages payable|credit card clearing|dividends? payable|other current liabilit\w*)\b/.test(t)) return "other_cl";
+  if(/\b(security deposits?|deferred (financing|charges|costs?)|long term (vendor )?(deposits?|investments?|assets?|prepaid)|non ?current assets?|other long term assets?)\b/.test(t)) return "other_nca";
+  if(/\binventor(y|ies)\b|\bmerchandise on hand\b|\bobsolescence\b/.test(t)) return "inventory";
+  if(/\b(receivables?|allowance for (doubtful|bad|credit|uncollectible))\b/.test(t)) return "receivables";
+  if(/\b(cash|checking|savings|petty|money market|bank accounts?)\b/.test(t)) return "cash";
+  if(/\b(prepaid|employee advances?|vendor deposits?|deposits?|advances?|marketing prepayments?|supplies|other current assets?|due from)\b/.test(t)) return "other_ca";
+  if(/\b(goodwill|intangibles?|trademarks?|trade names?|patents?|customer relationships?|licen[sc]es?|franchise)\b/.test(t)) return "gw_intang";
+  if(/\b(equipment|furniture|fixtures?|vehicles?|buildings?|land|leasehold|machinery|accumulated depreciation|computers?|signage|improvements|property|capitalized|pos terminals?|tools)\b/.test(t)) return "ppe";
+  return ({ ca:"other_ca", nca:"other_nca", cl:"other_cl", ncl:"other_ncl", eq:"equity" })[sec] || "";
+}
+function classifyCF(t, sec){
+  if(/\b(interest paid|income taxes paid|taxes paid|cash paid (to|for)|cash (collected|received) from customers)\b/.test(t)) return "cfo";
+  if(/\b(dividends?|distributions? (to|paid)|owner'?s? (draws?|distributions?)|member distributions?)\b/.test(t)) return "dividends";
+  if(/\b(repurchases?|buybacks?|treasury|redemptions? of (shares|stock))\b/.test(t)) return "buybacks";
+  if(/\b(capital expenditures?|capex)\b/.test(t)
+     || /\b(purchases?|acquisitions?|payments?|additions?|new|spend)\b[\s\S]*\b(property|equipment|fixed assets?|plant|leasehold|furniture|fixtures|vehicles?|computers?|hardware|signage|software|intangible|improvements|capital assets?)\b/.test(t)
+     || /\b(proceeds from|sale proceeds)\b[\s\S]*\b(sale|disposal|disposing)\b[\s\S]*\b(property|equipment|fixed assets?|vehicles?)\b/.test(t)) return "capex";
+  if(/\b(sba|term loans?|line of credit|revolving|borrowings?|loans?|notes? payable|debt|financing (received|funding)|paydown|repayments?|principal|credit facility)\b/.test(t)) return "debt_issued_repaid";
+  if(/\b(net (income|earnings|loss)|depreciation|amortization|changes? in|increase|decrease|provision|stock based|share based|loss on|gain on|deferred|add back|accrued)\b/.test(t)) return "cfo";
+  return sec === "cfo" ? "cfo" : "";
+}
+function classifyDetail(item, stmt, sec){
+  const t = cleanForRules(item);
+  if(!t) return "";
+  if(stmt === "IS") return classifyIS(t, sec);
+  if(stmt === "BS") return classifyBS(t, sec);
+  if(stmt === "CF") return classifyCF(t, sec);
+  return "";
+}
+
+/* ---- subtotal handling ---- */
+function isTotalish(label){ const t = cleanForRules(label); return /^(total|subtotal|sub total)\b/.test(t) || /\btotal$/.test(t); }
+function isDerivedLine(label){
+  const t = cleanForRules(label);
+  return /^gross (profit|margin)\b/.test(t) || /^ebitda\b/.test(t) || /^working capital\b/.test(t)
+    || /^net (increase|decrease|change)\b.*\bcash\b/.test(t)
+    || /^(net )?cash (provided|used|from)\b.*\b(investing|financing)\b/.test(t)
+    || /^cash (at )?(the )?(beginning|start)\b/.test(t) || /^beginning (of )?(period )?cash/.test(t);
+}
+function matchTol(target, n, strict){
+  const t = Math.abs(target);
+  if(strict) return Math.max(0.01, 0.001 * t);
+  const loose = Math.max(1, t * 0.005, 0.3 * Math.sqrt(n) + 0.5);   // allow for rounding in the file
+  return t >= 20 * loose ? loose : 0.01;                                // ...but never on tiny numbers, where ±1 is a different number
+}
+function listFits(list, target, years, strict){
+  if(!list.length || (strict && list.length < 2)) return false;
+  if(!years.some(y => (Number(target.values[y]) || 0) !== 0)) return false;
+  return years.every(y => {
+    const sum = list.reduce((s, r) => s + (Number(r.values[y]) || 0), 0);
+    const tv = Number(target.values[y]) || 0;
+    return Math.abs(sum - tv) <= matchTol(tv, list.length, strict);
+  });
+}
+
+/* Map every row we can, in three confidence tiers:
+   1. wording match (done earlier, by label),
+   2. sum-match: unmapped rows that add up exactly to a subtotal that follows them inherit
+      that subtotal's category, and the subtotal itself is then NOT counted again,
+   3. keyword + section rules for what remains (never into a category already covered). */
+function autoMapRows(rows, years){
+  let buf = [];
+  // The contiguous run of rows just above `r` that could be its components: rows with no
+  // category yet, or rows already in the same category (e.g. "Sales" above "Total Income").
+  const tryFit = (r, key) => {
+    let start = buf.length;
+    while(start > 0){ const k = buf[start - 1]; if(k.mapKey && k.mapKey !== key) break; start--; }
+    for(let s = start; s < buf.length; s++){
+      const cand = buf.slice(s);
+      if(listFits(cand, r, years, !r.mapKey)) return cand;
+    }
+    return null;
+  };
+  rows.forEach(r => {
+    const key = r.mapKey || (/_r$/.test(r.fuzzyKey || "") ? "" : (r.fuzzyKey || ""));
+    if(key && !/_r$/.test(key)){
+      const cand = tryFit(r, key);
+      if(cand){
+        cand.forEach(k => { if(!k.mapKey){ k.mapKey = key; k.how = "sum"; } k.stmt = r.stmt; });
+        r.mapKey = key; r.how = "label"; r.role = "subtotal"; r.childIds = cand.map(k => k.id);
+        // the children stay in the run so a bigger total further down can still add them up
+      } else buf.push(r);
+      return;
+    }
+    if(key){ buf.push(r); return; }  // reported-subtotal rows (tca_r etc.) act as run breakers
+    if(isDerivedLine(r.item)){ r.mapKey = IGNORE_KEY; r.how = "derived"; return; }
+    if(isTotalish(r.item)){
+      for(let s = buf.length - 1; s >= 0; s--){
+        const cand = buf.slice(s);
+        if(cand.some(k => k.mapKey && /_r$/.test(k.mapKey))) break;
+        if(listFits(cand, r, years)){ r.mapKey = IGNORE_KEY; r.role = "subtotal"; r.how = "subtotal"; r.childIds = cand.map(k => k.id); break; }
+      }
+      return;
+    }
+    buf.push(r);
+  });
+  const covered = new Set();
+  rows.forEach(r => { if(r.mapKey && r.mapKey !== IGNORE_KEY && r.role !== "subtotal") covered.add(r.mapKey); });
+  rows.forEach(r => {
+    if(r.mapKey || r.role) return;
+    let key = r.fuzzyKey || "", how = "fuzzy";
+    if(/_r$/.test(key)){ const kw = classifyDetail(r.item, r.stmt, r.sec); if(kw){ key = kw; how = "keyword"; } }
+    if(!key && !isTotalish(r.item)){ key = classifyDetail(r.item, r.stmt, r.sec); how = "keyword"; }
+    if(!key) return;
+    if(covered.has(key)){ r.mapKey = IGNORE_KEY; r.how = "covered"; r.coveredKey = key; return; }
+    r.mapKey = key; r.how = how;
+  });
+  // A "Total Expenses" subtotal often swallows depreciation. If the file has no separate
+  // D&A line, pull those lines back out so EBITDA and operating income stay correct.
+  if(!rows.some(r => r.mapKey === "da" && r.role !== "subtotal")){
+    rows.forEach(r => {
+      if(r.stmt === "IS" && r.mapKey === "opex" && r.role !== "subtotal" && /(^| )(depreciation|amortization|amortisation)( |$)/.test(cleanForRules(r.item)) && !/accumulated/.test(cleanForRules(r.item))){ r.mapKey = "da"; }
+    });
+  }
+  return rows;
+}
+/* ==== MAPPING ENGINE (end) ==== */
+
+function guessRowFromLabel(label, forcedStmt){
+  const g = bestMapKeyGuessEx(label, forcedStmt || null);
+  const mapKey = g.key;
+  if(mapKey){ const std = STANDARD_LINES.find(l => l.key === mapKey); return { stmt: std.stmt, mapKey, tier: g.tier }; }
+  const t = (label || "").toLowerCase();
+  const cfWords = ["operating activities","investing activities","financing activities","net cash provided","net cash used","capital expenditures","purchases of property","proceeds from","repayments of","dividends paid"];
+  const bsWords = ["total assets","total liabilities","total equity","total stockholders","accounts payable","accounts receivable","inventor","goodwill","retained earnings","current assets","current liabilities","long-term debt","long term debt","property, plant","property and equipment"];
+  if(cfWords.some(k => t.includes(k))) return { stmt:"CF", mapKey:"", tier:0 };
+  if(bsWords.some(k => t.includes(k))) return { stmt:"BS", mapKey:"", tier:0 };
+  return { stmt:"IS", mapKey:"", tier:0 };
+}
+function rowsFromTable(aoa, forcedStmt){
+  if(!aoa || !aoa.length) return { years:[], rows:[], notes:[] };
+  const header = (aoa[0] || []).map(cleanHeaderLabel);
+  const dataRows = aoa.slice(1).filter(r => r && r.some(c => c!==undefined && c!==null && c.toString().trim()!==""));
+  if(!dataRows.length) return { years:[], rows:[], notes:[] };
+  const nCols = Math.max(header.length, ...dataRows.map(r => r.length));
+  const numericHits = new Array(nCols).fill(0), seenHits = new Array(nCols).fill(0);
+  dataRows.forEach(r => { for(let c=1; c<nCols; c++){ const v = r[c]; if(v===undefined||v===null||v.toString().trim()==="") continue; seenHits[c]++; if(!Number.isNaN(parseNumericCell(v))) numericHits[c]++; } });
+  const yearCols = [];
+  for(let c=1; c<nCols; c++){ if(seenHits[c] > 0 && numericHits[c] / seenHits[c] >= 0.6) yearCols.push(c); }
+  const rawYears = yearCols.map((c,i) => (header[c] && header[c].trim()) ? header[c].trim() : ("Period " + (i+1)));
+  const ordered = orderPeriods(rawYears);
+  const notes = ordered.note ? [ordered.note] : [];
+  const rows = [];
+  let lastHeader = "", stmtCtx = forcedStmt || null;
+  dataRows.forEach(r => {
+    const label = (r[0]===undefined||r[0]===null) ? "" : r[0].toString().trim();
+    if(!label) return;
+    const values = {}; let anyNumeric = false;
+    yearCols.forEach((c,i) => { const n = parseNumericCell(r[c]); if(!Number.isNaN(n)) anyNumeric = true; values[rawYears[i]] = Number.isNaN(n) ? 0 : n; });
+    if(!anyNumeric){ lastHeader = label; if(!forcedStmt){ const sc = stmtFromHeader(label); if(sc) stmtCtx = sc; } return; }
+    const guess = guessRowFromLabel(label, forcedStmt);
+    const exact = !!guess.mapKey && guess.tier < 3;
+    const stmt = forcedStmt || (guess.mapKey ? guess.stmt : (stmtCtx || guess.stmt));
+    if(!forcedStmt && guess.mapKey) stmtCtx = guess.stmt;
+    rows.push({ id: rowSeq++, stmt, item: label, mapKey: exact ? guess.mapKey : "", fuzzyKey: (!exact && guess.mapKey) ? guess.mapKey : "", values, note:"", how: exact ? "label" : "", sec: sectionOf(lastHeader) });
+    if(exact && /_r$/.test(guess.mapKey)) lastHeader = "";
+  });
+  autoMapRows(rows, rawYears);
+  return { years: ordered.years, rows, notes };
+}
+async function readFileAsTables(file){
+  const ext = (file.name.split(".").pop() || "").toLowerCase();
+  if(ext === "xlsx" || ext === "xls"){
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type:"array" });
+    return wb.SheetNames.map(name => ({ sheetName: name, aoa: XLSX.utils.sheet_to_json(wb.Sheets[name], { header:1, raw:true, defval:"" }) }));
+  }
+  const text = await file.text();
+  const parsed = Papa.parse(text.trim(), { skipEmptyLines:true });
+  return [{ sheetName:null, aoa: parsed.data }];
+}
+function setParseStatus(msg, isError){
+  const el = document.getElementById("parseStatus");
+  if(el) el.innerHTML = `<div class="hint"${isError ? ' style="color:var(--bad);"' : ""}>${msg}</div>`;
+}
+function snapshotOriginal(){ state.originalRows = JSON.parse(JSON.stringify(state.rows)); }
+
+async function handleUploadedFiles(fileList, mode){
+  const file = fileList && fileList[0];
+  if(!file) return;
+  setParseStatus("Reading " + file.name + " …");
+  try{
+    const tables = await readFileAsTables(file);
+    if(state.isSample){ state.isSample = false; state.rows = []; state.years = []; state.yearNote = ""; state.outlookCustom = null; }
+    let bestYears = [], allRows = [], parseNotes = [];
+    tables.forEach(tbl => {
+      let forcedStmt = null;
+      if(mode === "bs") forcedStmt = "BS"; else if(mode === "is") forcedStmt = "IS"; else if(mode === "cf") forcedStmt = "CF";
+      else if(tbl.sheetName){
+        const n = tbl.sheetName.toLowerCase();
+        if(n.includes("balance")) forcedStmt = "BS";
+        else if(n.includes("income") || n.includes("p&l") || n.includes("profit")) forcedStmt = "IS";
+        else if(n.includes("cash flow") || n === "cf") forcedStmt = "CF";
+      }
+      const { years, rows, notes } = rowsFromTable(tbl.aoa, forcedStmt);
+      if(years.length > bestYears.length) bestYears = years;
+      allRows = allRows.concat(rows);
+      (notes || []).forEach(n => parseNotes.push(n));
+    });
+    if(!allRows.length){
+      setParseStatus(`Couldn't find any numeric line items in ${file.name} — try "Copy & Paste" instead, or double-check the file has real data in it.`, true);
+      return;
+    }
+    if(mode === "one"){
+      state.years = bestYears;
+      state.rows = allRows;
+    } else {
+      if(state.years.length === 0) state.years = bestYears;
+      else if(bestYears.length === state.years.length){
+        allRows.forEach(row => { const remapped = {}; bestYears.forEach((y,i) => remapped[state.years[i]] = row.values[y]); row.values = remapped; });
+      }
+      state.rows = state.rows.filter(r => r._src !== mode);
+      allRows.forEach(r => r._src = mode);
+      state.rows = state.rows.concat(allRows);
+    }
+    snapshotOriginal();
+    renderUploadScreen();
+    state.parseNotes = parseNotes;
+    const nUn = allRows.filter(r => !r.mapKey).length, nIg = allRows.filter(r => r.mapKey === IGNORE_KEY).length;
+    setParseStatus(`Loaded ${allRows.length} line item${allRows.length===1?"":"s"} from ${file.name} — ${allRows.length-nUn-nIg} mapped, ${nIg} set aside (subtotals/derived lines, not double-counted), ${nUn} need your attention. ${parseNotes.join(" ")}`);
+  } catch(err){
+    setParseStatus(`Couldn't read ${file.name} (${err && err.message ? err.message : err}). Try exporting it as a CSV or Excel file.`, true);
+  }
+}
+function parsePastedCSV(text){
+  state.isSample = false;
+  const parsed = Papa.parse(text.trim(), { skipEmptyLines:true, delimiter: text.includes("\t") ? "\t" : "," });
+  const { years, rows, notes } = rowsFromTable(parsed.data, null);
+  state.parseNotes = notes || [];
+  if(years.length) state.years = years;
+  state.rows = rows;
+  snapshotOriginal();
+}
+
+/* =========================================================================
+   CALCULATION ENGINE
+   ========================================================================= */
+function aggregateValue(rows, key, year){ let sum = 0; for(const r of rows){ if(r.mapKey === key && r.role !== "subtotal") sum += (Number(r.values[year]) || 0); } return sum; }
+/* Sign normalization: statements disagree on whether outflows are shown as negatives.
+   Internal convention: capex/dividends/buybacks negative, net_interest negative (expense), tax positive (expense). */
+function detectSignFlips(rows, years){
+  const flips = {};
+  const raw = (k,y) => aggregateValue(rows, k, y);
+  ["capex","dividends","buybacks"].forEach(k => {
+    const tot = years.reduce((s,y) => s + raw(k,y), 0);
+    if(tot > 0) flips[k] = true;
+  });
+  const y = years[years.length-1];
+  if(y !== undefined){
+    const pre = raw("pretax_r",y), op = raw("opinc_r",y), oth = raw("other_nonop",y), ni = raw("net_interest",y);
+    if(pre && ni && Math.abs(op+oth-ni-pre) + 0.5 < Math.abs(op+oth+ni-pre)) flips.net_interest = true;
+    const nr = raw("ni_r",y), tx = raw("tax",y), nci = raw("nci",y);
+    if(pre && nr && tx && Math.abs(pre+tx-nci-nr) + 0.5 < Math.abs(pre-tx-nci-nr)) flips.tax = true;
+    else if(!(pre && nr) && years.reduce((s,yy) => s + raw("tax",yy), 0) < 0) flips.tax = true;
+  }
+  return flips;
+}
+function buildAggregator(rows, years){
+  const cache = {};
+  const flips = detectSignFlips(rows, years);
+  state.signFlips = flips;
+  years.forEach(y => { cache[y] = {}; STANDARD_LINES.forEach(l => cache[y][l.key] = (flips[l.key] ? -1 : 1) * aggregateValue(rows, l.key, y)); });
+  return (key, y) => (cache[y] && cache[y][key]) || 0;
+}
+function stmtHasData(stmt){ return state.rows.some(r => r.stmt === stmt && r.mapKey && r.mapKey !== IGNORE_KEY); }
+function notCountedInfo(){
+  const un = state.rows.filter(r => r.item && r.item.trim() && !r.mapKey);
+  const y = state.years[state.years.length-1];
+  const amt = un.reduce((s,r) => s + Math.abs(Number(r.values[y]) || 0), 0);
+  return { n: un.length, amt, top: un.slice().sort((a,b) => Math.abs(b.values[y]||0)-Math.abs(a.values[y]||0)).slice(0,3).map(r => r.item) };
+}
+
+function computeRatios(rows, years){
+  const v = buildAggregator(rows, years);
+  const days = periodDays();
+  const out = {};
+  years.forEach(y => {
+    const revenue=v("revenue",y), cogs=v("cogs",y), opinc_r=v("opinc_r",y), da=v("da",y),
+          net_interest=v("net_interest",y), ni_r=v("ni_r",y), tca_r=v("tca_r",y), tcl_r=v("tcl_r",y),
+          ta_r=v("ta_r",y), cash=v("cash",y), receivables=v("receivables",y), inventory=v("inventory",y),
+          ap=v("ap",y), current_debt=v("current_debt",y), ltd=v("ltd",y), equity=v("equity",y),
+          cfo=v("cfo",y), capex=v("capex",y), dividends=v("dividends",y), buybacks=v("buybacks",y), tl_r=v("tl_r",y);
+    const totalDebt = current_debt + ltd, netDebt = totalDebt - cash, ebitda = opinc_r + da, fcf = cfo + capex;
+    out[y] = {
+      currentRatio: tca_r/tcl_r, quickRatio:(cash+receivables)/tcl_r, workingCapital: tca_r-tcl_r,
+      debtToEquity: totalDebt/equity, interestCoverage: opinc_r/Math.abs(net_interest), netDebtToEbitda: netDebt/ebitda,
+      grossMargin:(revenue-cogs)/revenue, operatingMargin: opinc_r/revenue, netMargin: ni_r/revenue, roe: ni_r/equity,
+      dso:(receivables/revenue)*days, dio:(inventory/cogs)*days, dpo:(ap/cogs)*days,
+      fcf, fcfMargin: fcf/revenue, cfoToNi: cfo/ni_r,
+      totalDebt, netDebt, ebitda, revenue, ni_r, opinc_r, da, cfo, equity,
+    };
+    out[y].cashConversionCycle = out[y].dso + out[y].dio - out[y].dpo;
+  });
+  for(let i=1;i<years.length;i++){
+    const y=years[i], py=years[i-1];
+    out[y].revenueGrowth = out[py].revenue ? out[y].revenue/out[py].revenue - 1 : NaN;
+    out[y].niGrowth = out[py].ni_r ? out[y].ni_r/out[py].ni_r - 1 : NaN;
+  }
+  return out;
+}
+function computeChecks(rows, years){
+  const v = buildAggregator(rows, years);
+  const out = {};
+  years.forEach(y => {
+    const ta_r=v("ta_r",y), tl_r=v("tl_r",y), equity=v("equity",y), tle_r = v("tle_r",y) || (tl_r + equity);
+    const cash=v("cash",y), receivables=v("receivables",y), inventory=v("inventory",y), other_ca=v("other_ca",y);
+    const tca_r=v("tca_r",y), ppe=v("ppe",y), gw_intang=v("gw_intang",y), other_nca=v("other_nca",y);
+    const ap=v("ap",y), current_debt=v("current_debt",y), other_cl=v("other_cl",y), tcl_r=v("tcl_r",y);
+    const ltd=v("ltd",y), other_ncl=v("other_ncl",y);
+    const revenue=v("revenue",y), cogs=v("cogs",y), opex=v("opex",y), da=v("da",y), opinc_r=v("opinc_r",y);
+    const net_interest=v("net_interest",y), other_nonop=v("other_nonop",y), pretax_r=v("pretax_r",y);
+    const tax=v("tax",y), nci=v("nci",y), ni_r=v("ni_r",y), cf_end_cash_r=v("cf_end_cash_r",y);
+    out[y] = {};
+    if(stmtHasData("BS")){
+      Object.assign(out[y], {
+        "Balance sheet balances": ta_r - tle_r,
+        "Current assets add up": (cash+receivables+inventory+other_ca) - tca_r,
+        "Current liabilities add up": (ap+current_debt+other_cl) - tcl_r,
+        "Liabilities + equity add up": (tl_r+equity) - tle_r,
+      });
+    }
+    if(stmtHasData("IS")){
+      Object.assign(out[y], {
+        "Operating income recomputes": (revenue-cogs-opex-da) - opinc_r,
+        "Pretax income recomputes": (opinc_r+net_interest+other_nonop) - pretax_r,
+        "Net income recomputes": (pretax_r-tax-nci) - ni_r,
+      });
+    }
+    if(stmtHasData("BS") && stmtHasData("CF")){ out[y]["Cash ties to cash flow"] = cash - cf_end_cash_r; }
+  });
+  const unmapped = rows.filter(r => r.item && r.item.trim() && !r.mapKey).length;
+  return { byYear: out, unmapped };
+}
+
+/* =========================================================================
+   RATIO DEFINITIONS — each item declares which statement(s) it needs, so
+   a ratio that can't honestly be computed shows "not available" instead
+   of a misleading zero.
+   ========================================================================= */
+const RATIO_GROUPS = [
+  { name:"Liquidity", items:[
+    { key:"currentRatio", name:"Current ratio", desc:"Total current assets / total current liabilities", fmt:"x", stmts:["BS"] },
+    { key:"quickRatio", name:"Quick ratio", desc:"(Cash + receivables) / total current liabilities", fmt:"x", stmts:["BS"] },
+    { key:"workingCapital", name:"Working capital", desc:"Current assets less current liabilities", fmt:"$", stmts:["BS"] },
+  ]},
+  { name:"Leverage", items:[
+    { key:"debtToEquity", name:"Debt to equity", desc:"Total debt / total equity", fmt:"x", stmts:["BS"] },
+    { key:"interestCoverage", name:"Interest coverage", desc:"Operating income / net interest expense", fmt:"x", stmts:["IS"] },
+    { key:"netDebtToEbitda", name:"Net debt / EBITDA", desc:"(Total debt − cash) / EBITDA", fmt:"x", stmts:["BS","IS"] },
+  ]},
+  { name:"Profitability", items:[
+    { key:"grossMargin", name:"Gross margin", desc:"(Revenue − cost of sales) / revenue", fmt:"%", stmts:["IS"] },
+    { key:"operatingMargin", name:"Operating margin", desc:"Operating income / revenue", fmt:"%", stmts:["IS"] },
+    { key:"netMargin", name:"Net margin", desc:"Net income / revenue", fmt:"%", stmts:["IS"] },
+    { key:"roe", name:"Return on equity", desc:"Net income / total equity", fmt:"%", stmts:["IS","BS"] },
+  ]},
+  { name:"Efficiency", items:[
+    { key:"dso", name:"Days sales outstanding", desc:"Receivables / revenue × period days", fmt:"days", stmts:["IS","BS"] },
+    { key:"dio", name:"Days inventory outstanding", desc:"Inventory / cost of sales × period days", fmt:"days", stmts:["IS","BS"] },
+    { key:"dpo", name:"Days payables outstanding", desc:"Accounts payable / cost of sales × period days", fmt:"days", stmts:["IS","BS"] },
+    { key:"cashConversionCycle", name:"Cash conversion cycle", desc:"DSO + DIO − DPO", fmt:"days", stmts:["IS","BS"] },
+  ]},
+  { name:"Cash Flow", items:[
+    { key:"fcf", name:"Free cash flow", desc:"Operating cash flow − capex", fmt:"$", stmts:["CF"] },
+    { key:"fcfMargin", name:"FCF margin", desc:"Free cash flow / revenue", fmt:"%", stmts:["CF","IS"] },
+    { key:"cfoToNi", name:"Operating cash flow / net income", desc:"Quality-of-earnings check", fmt:"x", stmts:["CF","IS"] },
+  ]},
+  { name:"Growth", items:[
+    { key:"revenueGrowth", name:"Revenue growth", desc:"Change in revenue vs. prior period", fmt:"%", stmts:["IS"] },
+    { key:"niGrowth", name:"Net income growth", desc:"Change in net income vs. prior period", fmt:"%", stmts:["IS"] },
+  ]},
+];
+
+function ratioAvailable(item){ return item.stmts.every(s => stmtHasData(s)); }
+
+function visibleRatioGroups(){
+  const ind = INDUSTRIES.find(i => i.key === state.profile.industry);
+  const hide = new Set((ind && ind.hide) || []);
+  if(state.profile.inventoryModel === "service"){ hide.add("dio"); hide.add("cashConversionCycle"); }
+  if(state.profile.method === "cash"){ hide.add("dso"); hide.add("dpo"); hide.add("cashConversionCycle"); }
+  return RATIO_GROUPS.map(g => ({ name:g.name, items: g.items.filter(it => !hide.has(it.key)) })).filter(g => g.items.length);
+}
+
+function severityTier(value, threshold, mode){
+  const breach = mode === "min" ? threshold - value : value - threshold;
+  if(breach <= 0) return "ok";
+  const scale = Math.abs(threshold) > 1e-9 ? Math.abs(threshold) : Math.max(Math.abs(value), 1e-9);
+  return (breach / scale) > 0.25 ? "critical" : "warning";
+}
+
+function flagStatus(key, ratios, years, thresholds){
+  const T = Object.fromEntries(thresholds.map(t => [t.key, Number(t.value)]));
+  const latest = years[years.length-1], prior = years.length>1 ? years[years.length-2] : null;
+  const latestVal = ratios[latest] ? ratios[latest][key] : undefined;
+  if(latestVal === undefined || !Number.isFinite(latestVal)) return null;
+  const goalSuppress = GOAL.find(g => g.key === state.profile.goal && g.suppress);
+  switch(key){
+    case "currentRatio": { const sev = severityTier(latestVal, T.minCurrentRatio, "min"); return { rule:`Flag if below ${T.minCurrentRatio.toFixed(2)}x`, flag: sev!=="ok", severity: sev }; }
+    case "debtToEquity": { const eq0 = ratios[latest].equity; if(eq0 <= 0 && ratios[latest].totalDebt > 0) return { rule:"Flag if equity is zero/negative while debt exists", flag:true, severity:"critical" }; const sev = severityTier(latestVal, T.maxDebtEquity, "max"); return { rule:`Flag if above ${T.maxDebtEquity.toFixed(2)}x`, flag: sev!=="ok", severity: sev }; }
+    case "interestCoverage": { const sev = severityTier(latestVal, T.minInterestCoverage, "min"); return { rule:`Flag if below ${T.minInterestCoverage.toFixed(2)}x`, flag: sev!=="ok", severity: sev }; }
+    case "netDebtToEbitda": { if(ratios[latest].ebitda <= 0 && ratios[latest].netDebt > 0) return { rule:"Flag if EBITDA is zero/negative while net debt exists", flag:true, severity:"critical" }; const sev = severityTier(latestVal, T.maxNetDebtEbitda, "max"); return { rule:`Flag if above ${T.maxNetDebtEbitda.toFixed(2)}x`, flag: sev!=="ok", severity: sev }; }
+    case "operatingMargin": {
+      const rule = `Flag if it falls more than ${(T.maxDropOpMargin*100).toFixed(1)} pts`;
+      if(latestVal < 0) return { rule:"Flag if margin is negative", flag:true, severity: latestVal < -0.10 ? "critical" : "warning" };
+      if(!prior || goalSuppress) return { rule, flag:false, severity:"ok" };
+      const drop = ratios[prior][key] - latestVal;
+      const sev = severityTier(drop, T.maxDropOpMargin, "max");
+      return { rule, flag: sev!=="ok", severity: sev };
+    }
+    case "netMargin": {
+      const rule = `Flag if it falls more than ${(T.maxDropNetMargin*100).toFixed(1)} pts`;
+      if(latestVal < 0) return { rule:"Flag if margin is negative", flag:true, severity: latestVal < -0.10 ? "critical" : "warning" };
+      if(!prior || goalSuppress) return { rule, flag:false, severity:"ok" };
+      const drop = ratios[prior][key] - latestVal;
+      const sev = severityTier(drop, T.maxDropNetMargin, "max");
+      return { rule, flag: sev!=="ok", severity: sev };
+    }
+    case "dso": {
+      const ct = CUSTOMER_TERMS.find(c => c.key === state.profile.customerTerms);
+      if(ct && ct.dsoTarget != null){
+        const ceiling = ct.dsoTarget + 15;
+        const sev = severityTier(latestVal, ceiling, "max");
+        return { rule:`Flag if it exceeds your stated terms by more than 15 days (${ceiling}d)`, flag: sev!=="ok", severity: sev };
+      }
+      const rule = `Flag if it rises more than ${T.maxRiseDSO} days`;
+      if(!prior) return { rule, flag:false, severity:"ok" };
+      const rise = latestVal - ratios[prior][key];
+      const sev = severityTier(rise, T.maxRiseDSO, "max");
+      return { rule, flag: sev!=="ok", severity: sev };
+    }
+    case "dpo": {
+      const st = SUPPLIER_TERMS.find(s => s.key === state.profile.supplierTerms);
+      if(st && st.dpoTarget != null){
+        const ceiling = st.dpoTarget * 1.5;
+        const sev = severityTier(latestVal, ceiling, "max");
+        return { rule:`Flag if it exceeds your stated terms by 50%+ (${ceiling.toFixed(0)}d)`, flag: sev!=="ok", severity: sev };
+      }
+      return null;
+    }
+    case "cfoToNi": { if(ratios[latest].ni_r <= 0) return null; const sev = severityTier(latestVal, T.minCfoNi, "min"); return { rule:`Flag if below ${T.minCfoNi.toFixed(2)}x`, flag: sev!=="ok", severity: sev }; }
+    case "fcf": {
+      if(goalSuppress) return { rule:`Flag if below ${CURRENCY_SYMBOL}${T.minFcf.toLocaleString()}`, flag:false, severity:"ok" };
+      const sev = severityTier(latestVal, T.minFcf, "min");
+      return { rule:`Flag if below ${CURRENCY_SYMBOL}${T.minFcf.toLocaleString()}`, flag: sev!=="ok", severity: sev };
+    }
+    default: return null;
+  }
+}
+
+function fmtVal(val, fmt){
+  if(val === undefined || val === null || !Number.isFinite(val)) return "–";
+  switch(fmt){
+    case "x": return val.toFixed(2) + "x";
+    case "%": return (val*100).toFixed(2) + "%";
+    case "days": return val.toFixed(1) + "d";
+    case "$": return (val<0? "−"+CURRENCY_SYMBOL:CURRENCY_SYMBOL) + Math.abs(Math.round(val)).toLocaleString();
+    default: return val.toFixed(2);
+  }
+}
+function fmtDelta(latest, prior, fmt){
+  if(latest===undefined||prior===undefined||!Number.isFinite(latest)||!Number.isFinite(prior)) return "";
+  const d = latest-prior, sign = d>0?"+":"";
+  if(fmt==="%") return sign + (d*100).toFixed(2) + " pts";
+  if(fmt==="x") return sign + d.toFixed(2) + "x";
+  if(fmt==="days") return sign + d.toFixed(1) + "d";
+  if(fmt==="$") return (d<0 ? "−"+CURRENCY_SYMBOL : "+"+CURRENCY_SYMBOL) + Math.abs(Math.round(d)).toLocaleString();
+  return sign + d.toFixed(2);
+}
+
+/* =========================================================================
+   RENDERING — shared state
+   ========================================================================= */
+let currentRatios = {}, currentChecks = {byYear:{},unmapped:0};
+
+function recomputeAll(){
+  const years = state.years;
+  currentRatios = computeRatios(state.rows, years);
+  currentChecks = computeChecks(state.rows, years);
+}
+
+function mapSelectHTML(row){
+  const groups = ["IS","BS","CF"].map(stmt => {
+    const opts = STANDARD_LINES.filter(l=>l.stmt===stmt).map(l => `<option value="${l.key}" ${row.mapKey===l.key?"selected":""}>${l.label}</option>`).join("");
+    return `<optgroup label="${STMT_LABEL[stmt]}">${opts}</optgroup>`;
+  }).join("");
+  return `<select data-id="${row.id}" data-action="mapkey">
+    <option value="">— unmapped —</option><option value="__ignore" ${row.mapKey===IGNORE_KEY?"selected":""}>Ignore (subtotal / not counted)</option>${groups}</select>`;
+}
+
+// One shared statement-editor renderer used both on the Upload screen
+// (to confirm mapping before analyzing) and on Tab 3 (to review/edit after).
+function renderStatementEditorInto(containerId){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  const years = state.years;
+  const groups = ["IS","BS","CF"].filter(s => state.rows.some(r => r.stmt === s));
+  if(!groups.length){ el.innerHTML = `<div class="hint">No data yet.</div>`; return; }
+  el.innerHTML = groups.map(stmt => {
+    const rows = state.rows.filter(r => r.stmt === stmt);
+    let head = `<thead><tr><th style="min-width:180px;">Line item</th><th style="min-width:200px;">Maps to</th>`;
+    years.forEach(y => head += `<th class="num">${y}</th>`);
+    head += `<th></th></tr></thead>`;
+    let body = "<tbody>" + rows.map(row => {
+      let r = `<tr data-row="${row.id}"><td><input type="text" data-id="${row.id}" data-action="item" value="${(row.item||"").replace(/"/g,'&quot;')}"></td><td>${mapSelectHTML(row)}</td>`;
+      years.forEach(y => { r += `<td class="num editcell"><input type="number" step="any" data-id="${row.id}" data-action="value" data-year="${y}" value="${row.values[y] ?? 0}"></td>`; });
+      r += `<td><button class="ghostbtn" data-id="${row.id}" data-action="removerow" title="Remove">✕</button></td></tr>`;
+      return r;
+    }).join("") + "</tbody>";
+    return `<div class="pillar-card" style="margin-bottom:18px;"><h3>${STMT_LABEL[stmt]}</h3><div class="table-wrap"><table>${head}${body}</table></div></div>`;
+  }).join("");
+  const ni = notCountedInfo(), unmappedCount = ni.n;
+  if(unmappedCount){
+    el.innerHTML += `<div class="banner bad">⚠ ${unmappedCount} row${unmappedCount>1?"s":""} not counted (≈ ${CURRENCY_SYMBOL}${Math.round(ni.amt).toLocaleString()} in the latest year, e.g. ${ni.top.join(", ")}) — map them or choose Ignore.</div>`;
+  }
+  applyCellErrorHighlighting(containerId);
+}
+
+/* Which reported-subtotal line(s) to flag in soft red when a given
+   integrity check fails — so a broken identity points at the cell
+   that's most likely wrong, not just a pass/fail pill. */
+const CHECK_MAPKEYS = {
+  "Balance sheet balances": ["ta_r","tle_r"],
+  "Current assets add up": ["tca_r"],
+  "Current liabilities add up": ["tcl_r"],
+  "Liabilities + equity add up": ["tle_r"],
+  "Operating income recomputes": ["opinc_r"],
+  "Pretax income recomputes": ["pretax_r"],
+  "Net income recomputes": ["ni_r"],
+  "Cash ties to cash flow": ["cash","cf_end_cash_r"],
+};
+function applyCellErrorHighlighting(containerId){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  el.querySelectorAll("td.badcell").forEach(td => { td.classList.remove("badcell"); td.removeAttribute("title"); });
+  const years = state.years;
+  years.forEach(y => {
+    const checksForYear = (currentChecks.byYear && currentChecks.byYear[y]) || {};
+    Object.entries(checksForYear).forEach(([name, diff]) => {
+      if(Math.abs(diff) <= 1) return; // passes
+      (CHECK_MAPKEYS[name] || []).forEach(mapKey => {
+        state.rows.filter(r => r.mapKey === mapKey).forEach(row => {
+          const input = el.querySelector(`input[data-action="value"][data-id="${row.id}"][data-year="${CSS.escape(y)}"]`);
+          if(input){
+            const td = input.closest("td");
+            if(td){ td.classList.add("badcell"); td.title = `${name}: off by ${fmtVal(diff,"$")} — check this number and the others it rolls up with.`; }
+          }
+        });
+      });
+    });
+  });
+}
+
+function onEditorInput(e){
+  const t = e.target;
+  const id = Number(t.dataset.id);
+  const row = state.rows.find(r => r.id === id);
+  if(!row) return;
+  if(t.dataset.action === "value"){ row.values[t.dataset.year] = parseFloat(t.value) || 0; }
+  else if(t.dataset.action === "item"){ row.item = t.value; }
+  recomputeAll();
+  renderIntegrityBar();
+  applyCellErrorHighlighting(e.currentTarget.id);
+}
+function onEditorChange(e){
+  const t = e.target;
+  if(t.dataset.action === "mapkey"){
+    const row = state.rows.find(r => r.id === Number(t.dataset.id));
+    if(row) row.mapKey = t.value;
+    recomputeAll();
+    renderIntegrityBar();
+    applyCellErrorHighlighting(e.currentTarget.id);
+  }
+}
+function onEditorClick(e){
+  const btn = e.target.closest('[data-action="removerow"]');
+  if(!btn) return;
+  state.rows = state.rows.filter(r => r.id !== Number(btn.dataset.id));
+  renderUploadScreen();
+  renderStatementEditorInto("statementEditor2");
+  recomputeAll();
+  renderIntegrityBar();
+}
+
+function renderUploadScreen(){
+  const chips = ["IS","BS","CF"].map(s => {
+    const has = stmtHasData(s);
+    return `<div class="stmt-chip${has?" has-data":""}"><div class="sc-title">${STMT_LABEL[s]}</div><div>${has ? "✓ provided" : "Not provided — related ratios will be skipped"}</div></div>`;
+  }).join("");
+  document.getElementById("stmtChipRow").innerHTML = chips;
+  const hasAny = state.rows.length > 0;
+  document.getElementById("statementEditorCard").style.display = hasAny ? "" : "none";
+  if(hasAny) renderStatementEditorInto("statementEditor");
+}
+
+/* =========================================================================
+   TAB 1 — EXECUTIVE SUMMARY
+   ========================================================================= */
+const PILLAR_RECOMMENDATIONS = {
+  Liquidity: "Build a larger cash buffer — tighten receivables collection, renegotiate supplier terms, or line up a credit facility before it's needed.",
+  Leverage: "Reduce reliance on debt — prioritize paying down higher-cost balances, or raise equity instead of debt for the next round of growth.",
+  Profitability: "Protect margins — review pricing, renegotiate the largest cost lines, or cut the lowest-performing product or service lines.",
+  Efficiency: "Tighten working capital — collect receivables faster, work down slow-moving inventory, or extend payables terms where possible.",
+  "Cash Flow": "Convert earnings into cash more reliably — review why cash flow is lagging net income, and reconsider the pace of capital spending.",
+  Growth: "Revisit the growth plan — confirm the current trend is sustainable before committing to further expansion.",
+};
+
+function renderTab1(){
+  const years = state.years;
+  if(!years.length || !state.rows.length){
+    document.getElementById("verdictBanner").innerHTML = `<div class="banner warn">No data yet — go back and upload or paste your statements.</div>`;
+    document.getElementById("kpiGrid").innerHTML = ""; document.getElementById("execSummaryCard").innerHTML = ""; document.getElementById("flagReport").innerHTML = "";
+    return;
+  }
+  const latest = years[years.length-1], prior = years.length>1?years[years.length-2]:null;
+  const r = currentRatios[latest] || {};
+  const pr = prior ? currentRatios[prior] : null;
+
+  const flags = [];
+  visibleRatioGroups().forEach(g => g.items.forEach(item => {
+    if(!ratioAvailable(item)) return;
+    const fs = flagStatus(item.key, currentRatios, years, state.thresholds);
+    if(fs && fs.flag) flags.push({ name:item.name, value: fmtVal(r[item.key], item.fmt), rule: fs.rule, severity: fs.severity, group: g.name });
+  }));
+  flags.sort((a,b) => (a.severity==="critical"?0:1) - (b.severity==="critical"?0:1));
+  const nCritical = flags.filter(f => f.severity==="critical").length;
+  const nWarning = flags.length - nCritical;
+  const _ni = notCountedInfo();
+  window.__tab1Warn = _ni.n ? `<div class="banner bad">⚠ ${_ni.n} line${_ni.n>1?"s":""} (≈ ${CURRENCY_SYMBOL}${Math.round(_ni.amt).toLocaleString()}) not counted in this analysis — e.g. ${_ni.top.join(", ")}. Fix on the Your Statements tab.</div>` : "";
+
+  const verdictClass = nCritical ? "bad" : nWarning ? "warn" : "good";
+  const verdictTitle = nCritical ? "Needs Attention" : nWarning ? "A Few Things to Watch" : "Healthy";
+  document.getElementById("verdictBanner").innerHTML = (window.__tab1Warn||"") + `
+    <div class="verdict ${verdictClass}">
+      <div class="vtitle">${verdictTitle}</div>
+      <div class="vsub">${flags.length ? `${nCritical} critical, ${nWarning} warning${nWarning===1?"":"s"}` : "No flags"} at ${latest} under your current thresholds</div>
+    </div>`;
+
+  const cards = [
+    { label:"Revenue", val:r.revenue, base:pr?pr.revenue:undefined, fmt:"$", stmts:["IS"] },
+    { label:"Net Margin", val:r.netMargin, base:pr?pr.netMargin:undefined, fmt:"%", stmts:["IS"] },
+    { label:"Free Cash Flow", val:r.fcf, base:pr?pr.fcf:undefined, fmt:"$", stmts:["CF"] },
+    { label:"Total Debt", val:r.totalDebt, base:pr?pr.totalDebt:undefined, fmt:"$", stmts:["BS"] },
+  ];
+  document.getElementById("kpiGrid").innerHTML = cards.map(k => {
+    const avail = k.stmts.every(s => stmtHasData(s));
+    if(!avail){
+      const missing = k.stmts.filter(s => !stmtHasData(s)).map(s => STMT_LABEL[s]).join(" / ");
+      return `<div class="kpi"><div class="k-label">${k.label}</div><div class="k-value" style="font-size:15px; color:var(--fg-muted); font-weight:500;">Not available</div><div class="k-delta" style="color:var(--fg-muted);">no ${missing} uploaded</div></div>`;
+    }
+    let deltaHTML = "";
+    if(k.base !== undefined && Number.isFinite(k.base) && Number.isFinite(k.val)){
+      const up = k.val >= k.base;
+      deltaHTML = `<div class="k-delta ${up?"up":"down"}">${fmtDelta(k.val,k.base,k.fmt)} (${periodLabel()}) vs ${prior}</div>`;
+    }
+    return `<div class="kpi"><div class="k-label">${k.label}</div><div class="k-value">${fmtVal(k.val,k.fmt)}</div>${deltaHTML}</div>`;
+  }).join("");
+
+  // template-composed narrative — no API call, pure formula-driven text
+  const name = state.companyName || "This business";
+  const ind = INDUSTRIES.find(i => i.key === state.profile.industry);
+  const indLabel = ind ? ind.label.toLowerCase() : "its industry";
+  let healthLine;
+  if(nCritical > 0) healthLine = `${name} is showing ${nCritical} critical flag${nCritical>1?"s":""}${nWarning?` and ${nWarning} warning${nWarning>1?"s":""}`:""} at ${latest} — this needs attention in the near term, not just monitoring.`;
+  else if(nWarning > 0) healthLine = `${name} is generally stable at ${latest}, with ${nWarning} warning${nWarning>1?"s":""} worth watching.`;
+  else healthLine = `${name} is showing no flags at ${latest} under the current thresholds for ${indLabel}.`;
+  const rootCause = flags.slice(0,3).map(f => `<li><b>${f.name}</b> (${f.value}, ${f.rule.toLowerCase()}) — ${f.group} pillar.</li>`).join("");
+  const pillars = [...new Set(flags.map(f => f.group))].slice(0,3);
+  const recs = pillars.length ? pillars.map(p => `<li>${PILLAR_RECOMMENDATIONS[p] || "Review this area more closely."}</li>`).join("") : `<li>No flags to act on right now — keep an eye on the trend, not just the latest snapshot.</li>`;
+  document.getElementById("execSummaryCard").innerHTML = `
+    <h2>Executive summary</h2>
+    <div class="hint">Auto-written from the ratios and flags on this page — not AI-generated, just a plain-English readout, zero cost to run.</div>
+    <p style="margin:0 0 14px;">${healthLine}</p>
+    ${flags.length ? `<div style="font-weight:600; font-size:13px; margin-bottom:6px;">Why these flags tripped</div><ul style="margin:0 0 14px; padding-left:18px; font-size:13px; color:var(--fg-muted);">${rootCause}</ul>` : ""}
+    <div style="font-weight:600; font-size:13px; margin-bottom:6px;">Suggested next steps</div>
+    <ul style="margin:0; padding-left:18px; font-size:13px; color:var(--fg-muted);">${recs}</ul>`;
+
+  const box = document.getElementById("flagReport");
+  if(flags.length){
+    box.innerHTML = `<div class="card"><h2>Red-flag audit</h2><div class="table-wrap"><table>
+      <thead><tr><th>Metric</th><th class="num">Value</th><th>Threshold rule</th><th>Severity</th></tr></thead>
+      <tbody>${flags.map(f=>`<tr><td class="metric-name">${f.name}</td><td class="num">${f.value}</td><td>${f.rule}</td><td><span class="pill ${f.severity==="critical"?"flag":"warn"}">${f.severity==="critical"?"Critical":"Warning"}</span></td></tr>`).join("")}</tbody>
+      </table></div></div>`;
+  } else box.innerHTML = "";
+}
+
+/* =========================================================================
+   TAB 2 — RATIO DETAIL (merged metric/years/target/status table per pillar)
+   ========================================================================= */
+function renderTab2(){
+  const years = state.years;
+  const box = document.getElementById("pillarTables");
+  if(!years.length || !state.rows.length){ box.innerHTML = `<div class="hint">No data yet.</div>`; return; }
+  box.innerHTML = visibleRatioGroups().map(g => {
+    let head = `<thead><tr><th>Metric</th>`; years.forEach(y=>head+=`<th class="num">${y}</th>`); head += `<th>Your Target</th><th>Status</th></tr></thead>`;
+    let body = "<tbody>" + g.items.map(item => {
+      const avail = ratioAvailable(item);
+      let row = `<tr><td class="metric-name">${item.name}<span class="metric-desc">${item.desc}</span></td>`;
+      years.forEach(y => { const val = avail ? currentRatios[y]?.[item.key] : undefined; row += `<td class="num">${avail ? fmtVal(val, item.fmt) : "–"}</td>`; });
+      if(!avail){
+        const missing = item.stmts.filter(s => !stmtHasData(s)).map(s => STMT_LABEL[s]).join(" / ");
+        row += `<td colspan="2" style="color:var(--fg-muted); font-size:12px;">Not available — no ${missing} uploaded</td></tr>`;
+        return row;
+      }
+      const fs = flagStatus(item.key, currentRatios, years, state.thresholds);
+      row += `<td>${fs ? fs.rule : "–"}</td>`;
+      const pillClass = fs ? (fs.severity==="critical"?"flag":fs.severity==="warning"?"warn":"ok") : "muted";
+      const pillLabel = fs ? (fs.severity==="critical"?"Critical":fs.severity==="warning"?"Warning":"OK") : "–";
+      row += `<td><span class="pill ${pillClass}">${pillLabel}</span></td></tr>`;
+      return row;
+    }).join("") + "</tbody>";
+    return `<div class="card pillar-card"><h3>${g.name}</h3><div class="table-wrap"><table>${head}${body}</table></div></div>`;
+  }).join("");
+}
+function ratiosAsCSV(){
+  const years = state.years;
+  let out = "Pillar,Metric," + years.join(",") + ",Target,Status\n";
+  visibleRatioGroups().forEach(g => g.items.forEach(item => {
+    const avail = ratioAvailable(item);
+    const vals = years.map(y => avail ? fmtVal(currentRatios[y]?.[item.key], item.fmt) : "N/A").join(",");
+    const fs = avail ? flagStatus(item.key, currentRatios, years, state.thresholds) : null;
+    const status = fs ? (fs.severity==="critical"?"CRITICAL":fs.severity==="warning"?"WARNING":"OK") : "N/A";
+    out += `${g.name},${item.name},${vals},${fs?fs.rule.replace(/,/g," "):""},${status}\n`;
+  }));
+  return out;
+}
+
+/* =========================================================================
+   TAB 3 — YOUR STATEMENTS
+   ========================================================================= */
+function renderIntegrityBar(){
+  const years = state.years;
+  const box = document.getElementById("integrityBar");
+  if(!years.length){ box.innerHTML = ""; return; }
+  const names = Object.keys(currentChecks.byYear[years[0]] || {});
+  if(!names.length){ box.innerHTML = `<div class="hint">No checks to run until more than one statement is uploaded.</div>`; return; }
+  let anyFail = false;
+  const pills = names.map(name => {
+    const cells = years.map(y => currentChecks.byYear[y][name]);
+    const pass = cells.every(v => Math.abs(v) <= 1);
+    if(!pass) anyFail = true;
+    return `<span class="pill ${pass?"ok":"flag"}" style="margin:3px 6px 3px 0;" title="${name}">${pass?"✓":"✗"} ${name}</span>`;
+  }).join("");
+  box.innerHTML = `<div style="margin-bottom:8px;">${pills}</div>` +
+    (anyFail ? `<div class="banner bad">⚠ One or more checks are off — likely a mapping issue below.</div>` : `<div class="banner good">✓ Everything ties out.</div>`);
+}
+function renderTab3(){ renderStatementEditorInto("statementEditor2"); renderIntegrityBar(); }
+
+/* =========================================================================
+   TAB 4 — OUTLOOK
+   ========================================================================= */
+const OUTLOOK_CUSTOM_DEFAULTS = { growth:0, grossMargin:0.30, opexPct:0.20, capexPct:0.03 };
+function computeOutlook(scenarioKey, custom){
+  const years = state.years;
+  if(years.length < 2) return null;
+  const latest = years[years.length-1], first = years[0];
+  const n = years.length;
+  const r = currentRatios[latest] || {};
+  const revLatest = r.revenue, revFirst = currentRatios[first]?.revenue;
+  if(revLatest === undefined || revFirst === undefined || !Number.isFinite(revLatest) || !Number.isFinite(revFirst) || revFirst <= 0) return null;
+  const cagr = Math.pow(revLatest / revFirst, 1 / (n - 1)) - 1;
+  if(scenarioKey === "custom"){
+    const c = Object.assign({}, OUTLOOK_CUSTOM_DEFAULTS, custom || {});
+    const projRevenue = revLatest * (1 + c.growth);
+    const projGrossProfit = projRevenue * c.grossMargin;
+    const projOpEx = projRevenue * c.opexPct;
+    const daMargin = revLatest ? (r.da || 0) / revLatest : 0;
+    const projDa = projRevenue * daMargin;
+    const projOpInc = projGrossProfit - projOpEx - projDa;
+    const conversion = (r.opinc_r && r.opinc_r !== 0) ? (r.ni_r / r.opinc_r) : 1;
+    const projNetIncome = projOpInc * conversion;
+    const projCapex = projRevenue * c.capexPct;
+    const projFcf = projNetIncome + projDa - projCapex;
+    return { cagr, growth:c.growth, years:n, first, latest, custom:c, projRevenue, projOpInc, projNetIncome, projFcf,
+      latestRevenue:revLatest, latestOpInc:r.opinc_r, latestNetIncome:r.ni_r, latestFcf:r.fcf };
+  }
+  const growth = scenarioKey === "flat" ? 0 : scenarioKey === "down" ? -0.10 : cagr;
+  const projRevenue = revLatest * (1 + growth);
+  const pick = (m) => (m !== undefined && Number.isFinite(m)) ? projRevenue * m : undefined;
+  return { cagr, growth, years:n, first, latest, projRevenue, projOpInc:pick(r.operatingMargin), projNetIncome:pick(r.netMargin), projFcf:pick(r.fcfMargin),
+    latestRevenue:revLatest, latestOpInc:r.opinc_r, latestNetIncome:r.ni_r, latestFcf:r.fcf };
+}
+const OUTLOOK_SLIDER_DEFS = [
+  { key:"growth", label:"Revenue growth rate", min:-0.5, max:0.5, step:0.01, fmt:v=>(v*100).toFixed(0)+"%" },
+  { key:"grossMargin", label:"Target gross margin", min:0, max:0.9, step:0.01, fmt:v=>(v*100).toFixed(0)+"%" },
+  { key:"opexPct", label:"OpEx % of revenue", min:0, max:0.8, step:0.01, fmt:v=>(v*100).toFixed(0)+"%" },
+  { key:"capexPct", label:"Capex % of sales", min:0, max:0.3, step:0.005, fmt:v=>(v*100).toFixed(1)+"%" },
+];
+function ensureOutlookCustomSeeded(){
+  if(state.outlookCustom) return;
+  const years = state.years, latest = years[years.length-1];
+  const r = currentRatios[latest] || {};
+  const trend = computeOutlook("trend");
+  const daMargin = r.revenue ? (r.da||0)/r.revenue : 0;
+  const opexPct = (r.grossMargin||0) - daMargin - (r.operatingMargin||0);
+  state.outlookCustom = {
+    growth: trend ? trend.cagr : OUTLOOK_CUSTOM_DEFAULTS.growth,
+    grossMargin: Number.isFinite(r.grossMargin) ? r.grossMargin : OUTLOOK_CUSTOM_DEFAULTS.grossMargin,
+    opexPct: Number.isFinite(opexPct) && opexPct >= 0 ? opexPct : OUTLOOK_CUSTOM_DEFAULTS.opexPct,
+    capexPct: Number.isFinite(r.fcf) && r.revenue ? Math.abs(r.fcf - (r.ni_r||0) - (r.da||0))/r.revenue : OUTLOOK_CUSTOM_DEFAULTS.capexPct,
+  };
+}
+function buildOutlookCustomSliders(){
+  const c = state.outlookCustom;
+  document.getElementById("outlookCustomSliders").innerHTML = OUTLOOK_SLIDER_DEFS.map(d => `
+    <div class="slider-field" data-key="${d.key}"><label>${d.label} <span class="sval">${d.fmt(c[d.key])}</span></label>
+    <input type="range" min="${d.min}" max="${d.max}" step="${d.step}" value="${c[d.key]}" data-key="${d.key}"></div>`).join("");
+}
+function renderOutlookKpis(res){
+  const kpis = [
+    { label:"Projected revenue", val:res.projRevenue, base:res.latestRevenue, fmt:"$" },
+    { label:"Projected operating income", val:res.projOpInc, base:res.latestOpInc, fmt:"$" },
+    { label:"Projected net income", val:res.projNetIncome, base:res.latestNetIncome, fmt:"$" },
+    { label:"Projected free cash flow", val:res.projFcf, base:res.latestFcf, fmt:"$" },
+  ];
+  document.getElementById("outlookKpiGrid").innerHTML = kpis.map(k => {
+    let deltaHTML = "";
+    if(k.val !== undefined && k.base !== undefined && Number.isFinite(k.val) && Number.isFinite(k.base)){
+      const up = k.val >= k.base;
+      deltaHTML = `<div class="k-delta ${up?"up":"down"}">${fmtDelta(k.val,k.base,k.fmt)} vs ${res.latest}</div>`;
+    }
+    return `<div class="kpi"><div class="k-label">${k.label}</div><div class="k-value">${k.val!==undefined && Number.isFinite(k.val) ? fmtVal(k.val,k.fmt) : "–"}</div>${deltaHTML}</div>`;
+  }).join("");
+}
+function updateOutlookCustomKpis(){ const res = computeOutlook("custom", state.outlookCustom); if(res) renderOutlookKpis(res); }
+function renderTab4(scenarioKey){
+  scenarioKey = scenarioKey || state.outlookScenario || "trend";
+  state.outlookScenario = scenarioKey;
+  const intro = document.getElementById("outlookIntro"), card = document.getElementById("outlookScenarioCard"), slidersBox = document.getElementById("outlookCustomSliders");
+  const trendBase = computeOutlook("trend");
+  if(!trendBase){
+    intro.innerHTML = `<h2>Outlook</h2><div class="hint">Add at least two periods of data to see a projection based on your own trend.</div>`;
+    card.style.display = "none"; return;
+  }
+  intro.innerHTML = `<h2>Outlook</h2><div class="hint">A deliberately simple, transparent projection — no machine learning, no hidden model.</div>
+    <div class="hint" style="margin-top:6px;">Historical revenue CAGR across your ${trendBase.years} periods (${trendBase.first} → ${trendBase.latest}): <b>${(trendBase.cagr*100).toFixed(1)}%</b> per period.</div>`;
+  card.style.display = "";
+  document.querySelectorAll('#outlookScenarioCard .route-btn[data-scenario]').forEach(b => b.classList.toggle("active", b.dataset.scenario === scenarioKey));
+  let res;
+  if(scenarioKey === "custom"){ ensureOutlookCustomSeeded(); buildOutlookCustomSliders(); slidersBox.style.display = ""; res = computeOutlook("custom", state.outlookCustom); }
+  else { slidersBox.style.display = "none"; res = computeOutlook(scenarioKey); }
+  renderOutlookKpis(res);
+}
+
+/* =========================================================================
+   TAB NAV + RESULTS ENTRY
+   ========================================================================= */
+function renderResults(){
+  document.getElementById("resultsCompany").textContent = state.companyName;
+  recomputeAll();
+  renderTab1(); renderTab2(); renderTab3(); renderTab4();
+}
+document.getElementById("rtabbar").addEventListener("click", e => {
+  const btn = e.target.closest("button[data-rtab]"); if(!btn) return;
+  document.querySelectorAll("#rtabbar button").forEach(b => b.setAttribute("aria-selected", String(b===btn)));
+  document.querySelectorAll(".rpanel").forEach(p => p.classList.remove("active"));
+  document.getElementById("rpanel-"+btn.dataset.rtab).classList.add("active");
+});
+
+/* =========================================================================
+   SCREEN / STAGE NAVIGATION
+   ========================================================================= */
+function showScreen(id){
+  ["screen-landing","screen-how","screen-wizard","screen-upload","screen-results"].forEach(s => {
+    document.getElementById(s).style.display = (s===id) ? "flex" : "none";
+  });
+  window.scrollTo(0,0);
+}
+function goHome(){ showScreen("screen-landing"); }
+
+/* ---- How It Works ---- */
+const HOW_ICONS = {
+  chart: `<svg viewBox="0 0 24 24"><path d="M4 20V10M12 20V4M20 20v-7"/></svg>`,
+  target: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r=".6" fill="currentColor" stroke="none"/></svg>`,
+  list: `<svg viewBox="0 0 24 24"><circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none"/><path d="M9 6h11M9 12h11M9 18h11"/></svg>`,
+  sliders: `<svg viewBox="0 0 24 24"><path d="M4 7h10M17 7h3M4 17h3M9 17h11"/><circle cx="14" cy="7" r="2.2"/><circle cx="6" cy="17" r="2.2"/></svg>`,
+  shield: `<svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>`,
+  lock: `<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`,
+  trend: `<svg viewBox="0 0 24 24"><path d="M4 16l6-6 4 4 6-8"/><path d="M14 6h6v6"/></svg>`,
+  info: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><circle cx="12" cy="8" r=".7" fill="currentColor" stroke="none"/></svg>`,
+  mail: `<svg viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="M4 7l8 6 8-6"/></svg>`,
+};
+const HOW_SLIDES = [
+  { icon:"chart", title:"Welcome to Virtual CFO",
+    body:`<p>A free, instant financial health check for small businesses. Upload or paste your statements and get back the kind of ratios, red flags, and plain-English read an analyst would give you — usually in under a minute.</p>` },
+  { icon:"target", title:"Why this exists",
+    body:`<p>Most small businesses can't justify hiring a CFO or an analyst just to sanity-check their own numbers. This tool closes that gap: a fast, independent read on where the business actually stands — free, with no account and no limit on how often you run it.</p>` },
+  { icon:"list", title:"How it works, step by step",
+    body:`<ol>
+      <li>Pick how your statements are organized — one workbook, separate files, or paste</li>
+      <li>Answer up to 9 quick questions about the business (skip any you're not sure of)</li>
+      <li>Upload or paste the numbers and check the auto-mapping before analyzing</li>
+      <li>Get a 4-part breakdown: summary, ratio detail, your statements, and a 3-year outlook</li>
+    </ol>` },
+  { icon:"sliders", title:"Tailored to your business",
+    body:`<p>The questions up front change which ratios even apply and what counts as healthy — a restaurant's current ratio isn't judged the same way as a software company's. Answer "Not sure" on anything and that question is simply skipped, not guessed at.</p>` },
+  { icon:"shield", title:"Built-in data integrity checks",
+    body:`<p>Every statement is re-checked against itself before you ever see a ratio — does the balance sheet balance, does net income recompute from its parts. If something's off, the exact cell is flagged so you can fix it and recalculate instantly, right there on the page.</p>` },
+  { icon:"lock", title:"Nothing ever leaves your browser",
+    body:`<p>Every calculation runs locally, in your browser. Nothing is uploaded to a server, stored anywhere, or sent through a paid API — which is also why it's free to run, every time, with no account required.</p>` },
+  { icon:"trend", title:"Looks ahead, not just back",
+    body:`<p>The Outlook tab projects revenue, income and cash flow forward using simple, transparent assumptions you control yourself with sliders — no black-box model, no guessing what's under the hood.</p>` },
+  { icon:"info", title:"What this isn't",
+    body:`<p>This is a first-pass health check, not a substitute for an accountant, bookkeeper, or CPA — and it's only as accurate as the numbers and answers you give it. Use it to catch issues early and guide the conversation, not as the final word.</p>` },
+  { icon:"mail", title:"Questions, concerns, or an idea?",
+    body:`<p>Reach out any time at <a href="mailto:omarwork268@gmail.com?subject=Virtual%20CFO%20-%20Question">omarwork268@gmail.com</a> for anything that looks off or any question about how a number is calculated.</p>
+      <p>Have an idea for something worth adding? <a href="mailto:omarwork268@gmail.com?subject=Virtual%20CFO%20-%20Suggestion">Send a suggestion</a> — this is still actively being improved.</p>` },
+];
+let howIdx = 0;
+function renderHowSlide(){
+  const s = HOW_SLIDES[howIdx];
+  document.getElementById("howIcon").innerHTML = HOW_ICONS[s.icon] || "";
+  document.getElementById("howTitle").textContent = s.title;
+  document.getElementById("howBody").innerHTML = s.body;
+  document.getElementById("howDots").innerHTML = HOW_SLIDES.map((_,i) => `<div class="dot${i===howIdx?" active":""}"></div>`).join("");
+  document.getElementById("howPrev").style.visibility = howIdx===0 ? "hidden" : "visible";
+  document.getElementById("howNext").textContent = howIdx === HOW_SLIDES.length-1 ? "Done" : "Next";
+}
+document.getElementById("howPrev").addEventListener("click", () => { if(howIdx>0){ howIdx--; renderHowSlide(); } });
+document.getElementById("howNext").addEventListener("click", () => { if(howIdx < HOW_SLIDES.length-1){ howIdx++; renderHowSlide(); } else goHome(); });
+document.getElementById("howHome").addEventListener("click", goHome);
+
+/* ---- Wizard ---- */
+let wizardIdx = 0;
+function renderWizardStep(){
+  const f = PROFILE_FIELDS[wizardIdx], total = PROFILE_FIELDS.length;
+  document.getElementById("wizardStepLabel").textContent = `Question ${wizardIdx+1} of ${total}`;
+  document.getElementById("wizardProgressFill").style.width = Math.round(((wizardIdx+1)/total)*100) + "%";
+  document.getElementById("wizardQuestionTitle").textContent = f.title;
+  const sel = document.getElementById("wizardSelect");
+  sel.innerHTML = f.options.map(o => `<option value="${o.key}"${o.key===state.profile[f.key]?" selected":""}>${o.label}</option>`).join("");
+  const current = f.options.find(o => o.key === sel.value) || f.options[0];
+  document.getElementById("wizardNote").textContent = (current && current.note) ? current.note : "";
+  document.getElementById("wizardBack").disabled = wizardIdx === 0;
+  document.getElementById("wizardNext").textContent = wizardIdx === total-1 ? "Continue to Upload" : "Next";
+}
+document.getElementById("wizardSelect").addEventListener("change", e => {
+  const f = PROFILE_FIELDS[wizardIdx];
+  state.profile[f.key] = e.target.value;
+  const current = f.options.find(o => o.key === e.target.value);
+  document.getElementById("wizardNote").textContent = (current && current.note) ? current.note : "";
+});
+document.getElementById("wizardBack").addEventListener("click", () => { if(wizardIdx>0){ wizardIdx--; renderWizardStep(); } });
+document.getElementById("wizardNext").addEventListener("click", () => {
+  if(wizardIdx < PROFILE_FIELDS.length-1){ wizardIdx++; renderWizardStep(); }
+  else { applyProfile(); enterUpload(); }
+});
+document.getElementById("wizardHome").addEventListener("click", goHome);
+
+/* ---- Landing -> wizard ---- */
+document.querySelectorAll(".landing-choice[data-upload-mode]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    state.uploadMode = btn.dataset.uploadMode;
+    wizardIdx = 0;
+    showScreen("screen-wizard");
+    renderWizardStep();
+  });
+});
+document.querySelector('.landing-choice[data-screen="how"]').addEventListener("click", () => {
+  howIdx = 0; showScreen("screen-how"); renderHowSlide();
+});
+
+/* ---- Upload screen ---- */
+function enterUpload(){
+  document.getElementById("periodTypeSelect").innerHTML = PERIOD_TYPES.map(p => `<option value="${p.key}"${p.key===state.periodType?" selected":""}>${p.label}</option>`).join("");
+  ["uploadOneCard","uploadSeparateCard","uploadPasteCard"].forEach(id => document.getElementById(id).style.display = "none");
+  if(state.uploadMode === "one") document.getElementById("uploadOneCard").style.display = "";
+  else if(state.uploadMode === "separate") document.getElementById("uploadSeparateCard").style.display = "";
+  else document.getElementById("uploadPasteCard").style.display = "";
+  renderUploadScreen();
+  showScreen("screen-upload");
+}
+document.getElementById("periodTypeSelect").addEventListener("change", e => { state.periodType = e.target.value; recomputeAll(); });
+document.getElementById("uploadBack").addEventListener("click", () => { showScreen("screen-wizard"); renderWizardStep(); });
+document.getElementById("uploadHome").addEventListener("click", goHome);
+document.getElementById("resultsBack").addEventListener("click", () => { enterUpload(); });
+document.getElementById("resultsHome").addEventListener("click", goHome);
+
+document.getElementById("btnSampleInline").addEventListener("click", () => { loadSample(); renderUploadScreen(); setParseStatus("Loaded a fictional sample business — feel free to analyze it as-is, or clear it and upload your own."); });
+document.getElementById("btnGoResults").addEventListener("click", () => {
+  if(!state.rows.length){ setParseStatus("Add at least one line item before analyzing — upload a file, paste data, or try the sample.", true); return; }
+  showScreen("screen-results");
+  renderResults();
+});
+
+function wireDropzone(dzId, inputId, mode){
+  const dz = document.getElementById(dzId), input = document.getElementById(inputId);
+  if(!dz || !input) return;
+  dz.addEventListener("click", () => input.click());
+  dz.addEventListener("dragover", e => { e.preventDefault(); dz.classList.add("dragover"); });
+  dz.addEventListener("dragleave", () => dz.classList.remove("dragover"));
+  dz.addEventListener("drop", e => { e.preventDefault(); dz.classList.remove("dragover"); handleUploadedFiles(e.dataTransfer.files, mode); });
+  input.addEventListener("change", e => handleUploadedFiles(e.target.files, mode));
+}
+wireDropzone("dropOne", "fileOne", "one");
+wireDropzone("dropIS", "fileIS", "is");
+wireDropzone("dropBS", "fileBS", "bs");
+wireDropzone("dropCF", "fileCF", "cf");
+
+function copyToClipboard(text, feedbackMsg){
+  const done = () => { const el = document.getElementById("copyFeedback"); if(el){ el.textContent = feedbackMsg; setTimeout(()=>el.textContent="",2000); } };
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(done);
+  else done();
+}
+function csvTemplate(){
+  return "Line Item\tPeriod 1\tPeriod 2\tPeriod 3\nRevenue\t\t\t\nCost of goods sold\t\t\t\nOperating expenses\t\t\t\nNet income\t\t\t\nCash\t\t\t\nTotal current assets\t\t\t\nTotal current liabilities\t\t\t\nTotal equity\t\t\t\nOperating cash flow\t\t\t\n";
+}
+document.getElementById("btnTemplate").addEventListener("click", () => copyToClipboard(csvTemplate(), "Template copied"));
+document.getElementById("btnParsePaste").addEventListener("click", () => {
+  const txt = document.getElementById("csvPaste").value;
+  if(txt.trim()){ parsePastedCSV(txt); renderUploadScreen(); setParseStatus("Parsed pasted data. Check the mapping below."); }
+});
+
+document.getElementById("statementEditor").addEventListener("input", onEditorInput);
+document.getElementById("statementEditor").addEventListener("change", onEditorChange);
+document.getElementById("statementEditor").addEventListener("click", onEditorClick);
+document.getElementById("statementEditor2").addEventListener("input", onEditorInput);
+document.getElementById("statementEditor2").addEventListener("change", onEditorChange);
+document.getElementById("statementEditor2").addEventListener("click", onEditorClick);
+
+document.getElementById("btnRecalc").addEventListener("click", () => { recomputeAll(); renderTab1(); renderTab2(); renderIntegrityBar(); applyCellErrorHighlighting("statementEditor2"); });
+document.getElementById("btnResetOriginal").addEventListener("click", () => {
+  if(!state.originalRows) return;
+  state.rows = JSON.parse(JSON.stringify(state.originalRows));
+  renderStatementEditorInto("statementEditor2");
+  recomputeAll(); renderTab1(); renderTab2(); renderIntegrityBar();
+  applyCellErrorHighlighting("statementEditor2");
+});
+document.getElementById("btnCopyRatios").addEventListener("click", () => copyToClipboard(ratiosAsCSV(), "Copied"));
+
+document.getElementById("outlookScenarioCard").addEventListener("click", e => {
+  const btn = e.target.closest(".route-btn[data-scenario]"); if(!btn) return;
+  renderTab4(btn.dataset.scenario);
+});
+document.getElementById("outlookCustomSliders").addEventListener("input", e => {
+  const input = e.target.closest("input[type=range][data-key]"); if(!input) return;
+  const key = input.dataset.key;
+  state.outlookCustom[key] = parseFloat(input.value);
+  const def = OUTLOOK_SLIDER_DEFS.find(d => d.key === key);
+  input.closest(".slider-field").querySelector(".sval").textContent = def.fmt(state.outlookCustom[key]);
+  updateOutlookCustomKpis();
+});
+
+/* =========================================================================
+   INIT
+   ========================================================================= */
+emptyState();
+showScreen("screen-landing");
+</script>
