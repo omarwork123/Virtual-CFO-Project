@@ -1007,6 +1007,9 @@ function classifyIS(t, sec){
   return ({ rev:"revenue", cogs:"cogs", opex:"opex", nonop:"other_nonop", tax:"tax" })[sec] || "";
 }
 function classifyBS(t, sec){
+  if(/\bconstruction (in|work in) (progress|process)\b|\bassets? under construction\b|\bcip\b/.test(t)) return "ppe";
+  /* finance / capital leases are borrowings; operating-lease liabilities are not (handled further down) */
+  if(/\b(capital|finance)\s+leases?\b/.test(t) && /\b(obligations?|liabilit\w*|payable)\b/.test(t)) return (/\b(current portion|current maturities|due within|short term)\b/.test(t) && !/\b(net of|less|non ?current|long term)\b/.test(t)) ? "current_debt" : (/\bcurrent\b/.test(t) && !/\b(non ?current|long term)\b/.test(t) ? "current_debt" : "ltd");
   if(/\bright of use\b|\broua?\b/.test(t) && /\bassets?\b/.test(t)) return "other_nca";
   if(/\b(non ?current|long term)\b/.test(t) && /\b(deferred revenue|unearned|accrued|lease liabilit\w*|deferred compensation|deferred rent|taxes payable|other liabilit\w*|contract liabilit\w*)\b/.test(t)) return "other_ncl";
   if(/\b(lease|rental|rent|utility|security) deposits?\b/.test(t)) return "other_nca";
@@ -1088,8 +1091,10 @@ function matchTol(target, n, strict){
 function listFits(list, target, years, strict){
   if(!list.length || (strict && list.length < 2)) return false;
   if(!years.some(y => Number.isFinite(target.values[y]) && target.values[y] !== 0)) return false;
-  return years.every(y => {
-    if(target.values[y] === null || target.values[y] === undefined || !Number.isFinite(Number(target.values[y]))) return false;
+  /* a statement that starts later (e.g. a cash flow with no first-year column) is tested only on the periods it reports */
+  const reported = years.filter(y => target.values[y] !== null && target.values[y] !== undefined && Number.isFinite(Number(target.values[y])));
+  if(!reported.length) return false;
+  return reported.every(y => {
     if(list.some(row => row.values[y] === null || row.values[y] === undefined || !Number.isFinite(Number(row.values[y])))) return false;
     const sum = list.reduce((s, r) => s + (Number(r.values[y]) || 0), 0);
     const tv = Number(target.values[y]) || 0;
@@ -1161,6 +1166,21 @@ function autoMapRows(rows, years){
         r.role = "subtotal";
         r.childIds = cand.map(k => k.id);
       } else {
+        // A loosely-labelled total (e.g. "Total other income (expense)") whose parts carry different categories:
+        // if the rows directly above add up to it across periods, it is a total and is set aside.
+        if(isTotalish(r.item)){
+          let hit = null;
+          for(let s = buf.length - 1; s >= 0 && !hit; s--){
+            const cand = buf.slice(s);
+            if(cand.some(k => k.stmt !== r.stmt || k.role === "subtotal" || (k.mapKey && /_r$/.test(k.mapKey)))) break;
+            if(cand.length >= 2 && listFits(cand, r, years, true)) hit = cand;
+          }
+          if(hit){
+            setAutoMapping(r, IGNORE_KEY, "subtotal", "high", "Excluded because the rows above it add up to this total.");
+            r.role = "subtotal"; r.childIds = hit.map(k => k.id);
+            buf.push(r); return;
+          }
+        }
         // No reconciling components. A lone reported line (no components nearby) stays counted;
         // a subtotal whose components don't add up is held out for review.
         const kids = isTotalish(r.item) ? nearbyRows(r, key) : [];
@@ -1204,7 +1224,11 @@ function autoMapRows(rows, years){
             r.role = "subtotal";
             r.childIds = cand.map(k => k.id);
           } else {
-            markMappingReview(r, "The subtotal matches rows that are not all mapped. Review the subtotal and its components before analysis.");
+            /* the components add up to this total, so it is a total, not a line of its own; any component that
+               still cannot be mapped is flagged on its own row, so nothing disappears silently */
+            setAutoMapping(r, IGNORE_KEY, "subtotal", "high", "Excluded because the rows above it add up to this total.");
+            r.role = "subtotal";
+            r.childIds = cand.map(k => k.id);
           }
           break;
         }
