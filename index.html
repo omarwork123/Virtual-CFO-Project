@@ -969,8 +969,8 @@ function mergePeriodLabels(existingYears, incomingYears){
 function cleanForRules(s){ return normalizeLabel(s).replace(/[^a-z0-9' ]/g, " ").replace(/\s+/g, " ").trim(); }
 function stmtFromHeader(h){
   const t = cleanForRules(h);
-  if(/\b(balance sheet|statement of financial position)\b/.test(t)) return "BS";
-  if(/\b(income statement|profit and loss|p and l|statements? of (operations|earnings|income)|statement of comprehensive income)\b/.test(t)) return "IS";
+  if(/\b(balance sheets?|statements? of financial (position|condition)|financial position|statements? of net assets)\b/.test(t)) return "BS";
+  if(/\b(income statements?|profit and loss|p and l|statements? of (operations|earnings|income|activities|comprehensive income)|earnings statements?|statements? of revenues?)\b/.test(t)) return "IS";
   if(/\bcash flows?\b/.test(t)) return "CF";
   return null;
 }
@@ -1262,17 +1262,19 @@ function rowsFromTable(aoa, forcedStmt){
   const ordered = orderPeriods(rawYears);
   const notes = ordered.note ? [ordered.note] : [];
   const rows = [];
-  let lastHeader = "", curSec = "", stmtCtx = forcedStmt || null;
+  let lastHeader = "", curSec = "", stmtCtx = forcedStmt || null, hdrStmt = null;
   dataRows.forEach(r => {
     const label = (r[0]===undefined||r[0]===null) ? "" : r[0].toString().trim();
     if(!label) return;
     const values = {}; let anyNumeric = false;
     yearCols.forEach((c,i) => { const n = parseNumericCell(r[c]); if(!Number.isNaN(n)) anyNumeric = true; values[rawYears[i]] = Number.isNaN(n) ? null : n; });
-    if(!anyNumeric){ lastHeader = label; const _s = sectionOf(label); if(_s) curSec = _s; if(!forcedStmt){ const sc = stmtFromHeader(label); if(sc) stmtCtx = sc; } return; }
-    let guess = guessRowFromLabel(label, forcedStmt);
+    if(!anyNumeric){ lastHeader = label; const _s = sectionOf(label); if(_s) curSec = _s; if(!forcedStmt){ const sc = stmtFromHeader(label); if(sc){ stmtCtx = sc; hdrStmt = sc; curSec = ""; } } return; }
+    /* a statement heading inside one pasted table (e.g. "CASH FLOW STATEMENT") locks the rows beneath it to that statement */
+    const lockStmt = forcedStmt || hdrStmt;
+    let guess = guessRowFromLabel(label, lockStmt);
     if(/\b(investing|financing)\s+activities\b/i.test(label) && /^(net\s+)?(total\s+)?cash\b|^total\b|^net\s+cash\b/i.test(label)) guess = { stmt:"CF", mapKey:"", tier:0 };
     const exact = !!guess.mapKey && guess.tier < 3;
-    const stmt = forcedStmt || (guess.mapKey ? guess.stmt : (stmtCtx || guess.stmt));
+    const stmt = lockStmt || (guess.mapKey ? guess.stmt : (stmtCtx || guess.stmt));
     if(!forcedStmt && guess.mapKey) stmtCtx = guess.stmt;
     rows.push({ id: rowSeq++, stmt, item: label, mapKey: exact ? guess.mapKey : "", fuzzyKey: (!exact && guess.mapKey) ? guess.mapKey : "", values, note:"", how: exact ? "label" : "", confidence: exact ? "high" : "low", sec: curSec });
     if(exact && /_r$/.test(guess.mapKey)) curSec = "";
